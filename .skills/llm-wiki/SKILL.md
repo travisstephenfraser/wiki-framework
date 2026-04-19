@@ -149,6 +149,37 @@ The manifest enables:
 - **Audit** — which source produced which wiki page
 - **Staleness detection** — source changed but wiki page hasn't been updated
 
+## Page Creation Discipline — Fold vs. New Page
+
+Before creating any new wiki page, run this gate. Splitting content into a sibling page creates drift risk (hub summary diverges from detail) and fragments reader flow (context sits one click away). Default to folding into an existing hub; split only when a concrete trigger hits.
+
+This discipline is anti-default, not anti-page. Pages that earn their keep pass the check easily. Pages that fail would quietly bloat the vault — especially during ingest, where a "new source" instinctively maps to "new page" even when the content belongs inside existing structure.
+
+### The check
+
+1. **Name the natural parent hub.** Every new piece of content has one — a project hub, an existing concept, a synthesis page, or an entity. If no parent exists, the content is genuinely new material and proceeds straight to page creation.
+
+2. **Check the four split triggers.** A sibling page is justified only when at least one hits:
+   - **Multi-hub reference** — the content will be linked from two or more parent hubs, not just one.
+   - **Canonical framework** — reusable reference material spanning multiple projects (Meadows-tier, not analysis-snapshot-tier). Pages like `meadows-leverage-points.md` pass this; a 16-row stakeholder table specific to one analysis does not.
+   - **Independent update cadence** — the content will change on a schedule disconnected from any single parent.
+   - **Dominant size** — folded content would exceed ~200 lines and materially dominate the parent's readability.
+
+3. **If no trigger hits, fold.** Add the content as a subsection of the parent hub. Record a **promote-back trigger** — the specific condition under which the fold would be reversed (e.g., "if this pattern applies to Rubrica or SiteProof too, extract to `concepts/`"). The promote-back trigger goes in the log so a future ingest can revisit the decision.
+
+4. **If a trigger hits, split.** Create the sibling page, link it from the parent, and note which trigger justified it in the log.
+
+### Log format
+
+Append to `log.md` when the call is made:
+
+- Fold: `PAGE_DECISION action=fold content="<brief>" parent=<hub> promote_back_trigger="<condition>"`
+- Split: `PAGE_DECISION action=split content="<brief>" parent=<hub> trigger=<trigger-name>`
+
+### Worked example
+
+During the MBA 253D Assignment 2 ingest (2026-04-19), the full sixteen-stakeholder outcomes table was initially split to `projects/north-star/stakeholder-outcomes.md`. No split trigger hit — single parent, analysis-snapshot not canonical, no independent cadence, only 16 rows. Folded back into `north-star.md` as a subsection. Promote-back trigger recorded: if the stakeholder outcomes apply across Rubrica / SiteProof / other projects, extract to `concepts/` or `synthesis/`.
+
 ## Page Template
 
 When creating a new wiki page, use this structure:

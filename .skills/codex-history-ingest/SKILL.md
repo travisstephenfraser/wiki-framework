@@ -133,6 +133,8 @@ Do not create one wiki page per session.
 - Merge recurring concepts across dates/projects
 - Use `cwd` from metadata to infer project scope
 
+**Before promoting any topic to a new page, run the fold-vs-new-page gate** from `llm-wiki/SKILL.md` (Page Creation Discipline). Default to folding topics into project hubs or existing global concepts; only split when a concrete trigger hits. Log each decision with a `PAGE_DECISION` entry.
+
 ## Step 5: Distill into Wiki Pages
 
 Route extracted knowledge using existing wiki conventions:

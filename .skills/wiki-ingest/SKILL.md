@@ -154,15 +154,31 @@ Before writing anything, plan which pages to update or create. Aim for 10-15 pag
 - If it's new, which category does it belong in?
 - What `[[wikilinks]]` should connect it to existing pages?
 
+**Before marking any candidate as "new page," run the fold-vs-new-page gate** from `llm-wiki/SKILL.md` (Page Creation Discipline section):
+
+1. Name the natural parent hub for this content.
+2. Check the four split triggers — multi-hub reference, canonical framework, independent update cadence, 200+ lines. A sibling page is justified only if at least one hits.
+3. If none hit, plan a **fold** (add as a subsection to the parent) and record the promote-back trigger. If one hits, plan a **split** and note the trigger.
+
+The plan should explicitly label each candidate `fold → <parent hub>` or `split → new page` before Step 5 writes anything. Default to fold; split is the exception, not the norm. This is the discipline that keeps the wiki from fragmenting into lightly-linked single-use pages as it grows.
+
 ### Step 5: Write/Update Pages
 
 For each page in your plan:
 
 **If creating a new page:**
+- Confirm Step 4's fold-vs-new-page gate actually flagged this as a split (at least one trigger hit). If the gate wasn't run, stop and run it now — do not default to a new page.
 - Use the page template from the llm-wiki skill (frontmatter + sections)
 - Place in the correct category directory
 - Add `[[wikilinks]]` to at least 2-3 existing pages
 - Include the source in the `sources` frontmatter field
+- Append `PAGE_DECISION action=split content="<brief>" parent=<hub> trigger=<trigger-name>` to `log.md`
+
+**If folding content into an existing hub:**
+- Read the parent hub first to pick the right subsection placement
+- Add the content as a subsection (usually `###` under an existing `##` section)
+- Update the parent's `updated` timestamp and `sources` list
+- Append `PAGE_DECISION action=fold content="<brief>" parent=<hub> promote_back_trigger="<condition>"` to `log.md`
 
 **If updating an existing page:**
 - Read the current page first

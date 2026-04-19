@@ -141,6 +141,7 @@ Compute the rough fractions and write the `provenance:` block on every new/updat
 - If a page already exists in the vault, **merge** new information into it. Don't create duplicates.
 - If you're adding to an existing page, update the `updated` timestamp and add the new source.
 - Check `index.md` to see what's already there before creating anything new.
+- **Before creating any new page, run the fold-vs-new-page gate** in `llm-wiki/SKILL.md` (Page Creation Discipline section). Name the parent hub and check the four split triggers (multi-hub reference / canonical framework / independent cadence / 200+ lines). If none hit, fold the content into the parent hub as a subsection and log a `PAGE_DECISION action=fold` entry with a promote-back trigger. If one hits, split and log `PAGE_DECISION action=split` with the trigger name. This check is the difference between a compounding wiki and one that slowly fragments into lightly-linked single-use pages.
 
 ## Step 5: Cross-link
 
