@@ -10,6 +10,7 @@ the vault from any project.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -348,6 +349,22 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ast_extract(args: argparse.Namespace) -> int:
+    from pathlib import Path
+    from obsidian_wiki.ast_extractor import extract
+    path = Path(args.path).expanduser().resolve()
+    try:
+        result = extract(path)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.pretty:
+        print(json.dumps(result, indent=2))
+    else:
+        print(json.dumps(result))
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     for name in list_skills():
         print(name)
@@ -405,6 +422,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     ip = sub.add_parser("info", help="show install paths, version, and config")
     ip.set_defaults(func=cmd_info)
+
+    ap = sub.add_parser(
+        "ast-extract",
+        help="extract code structure (classes, functions, imports) from a file or directory — no LLM, no API calls",
+    )
+    ap.add_argument("path", help="file or directory to extract from")
+    ap.add_argument("--pretty", action="store_true", help="pretty-print JSON output")
+    ap.set_defaults(func=cmd_ast_extract)
 
     return p
 

@@ -216,6 +216,41 @@ If the QMD results show that 3+ papers touch the same concept, that concept almo
 **Skip this step** if `QMD_PAPERS_COLLECTION` is not set.
 
 
+### Step 1c: Code Source Detection (free local extraction — no LLM)
+
+**GUARD: Only run this step when the source contains code files** (`.py`, `.ts`, `.js`, `.go`, `.rs`, `.java`, `.kt`, `.rb`, `.c`, `.cpp`, `.swift`, `.sh`, etc.). Skip for docs-only, PDFs, images, chat exports.
+
+When the source path is a directory or file with code, run the local AST extractor before doing any LLM work. This is free — it parses code structure locally (classes, functions, imports, inheritance) using deterministic patterns, zero tokens spent.
+
+```bash
+obsidian-wiki ast-extract <path> --pretty
+```
+
+The output is JSON with three sections you'll use directly:
+
+**`nodes`** — every class, function, import, and file found. Fields: `id`, `label`, `kind` (`class`/`function`/`import`/`file`), `file`, `line`, `language`.
+
+**`edges`** — structural relationships. `relation` is one of: `defines`, `imports`, `inherits`, `calls`. All have `confidence: "EXTRACTED"` — these are facts, not inferences.
+
+**`god_nodes`** — the 10 most-connected node IDs by degree. These are the architectural hubs of the codebase.
+
+**`stats`** — `files_processed`, `nodes`, `edges`, `languages`.
+
+#### What to do with the AST output
+
+1. **Seed entity pages** — each `kind: "class"` node with degree ≥ 2 (appears in multiple edges) gets a stub `entities/<name>.md` page. Do not create a page per function — only architectural-level entities.
+
+2. **Mark god nodes** — the top `god_nodes` entries are the concepts every other page should link to. Reference them in the project overview page.
+
+3. **Map import graph** — `relation: "imports"` edges reveal what the codebase depends on. List the top 5 external imports in the project overview under a "Dependencies" section.
+
+4. **Surface inheritance hierarchies** — `relation: "inherits"` edges show class relationships. Group sibling classes into a single page when they share a parent.
+
+5. **Skip code files in the LLM pass** — do NOT send `.py`, `.ts`, `.go`, etc. source files to the model for Step 2 extraction. The AST output already captured their structure. Only send: `README.md`, `CHANGELOG.md`, inline docstrings/comments (extract as plain text), and any `.md`/`.txt` docs alongside the code.
+
+If `obsidian-wiki` is not installed or the command fails, skip this step and proceed to Step 2 as normal — it is an optimisation, not a requirement.
+
+
 ### Step 2: Extract Knowledge
 
 From the source, identify:

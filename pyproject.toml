@@ -33,6 +33,10 @@ classifiers = [
 # Pure-stdlib CLI — installing skills needs no third-party runtime dependencies.
 dependencies = []
 
+[project.optional-dependencies]
+# Higher-fidelity AST extraction (tree-sitter parses real ASTs; regex is the default fallback).
+ast = ["tree-sitter>=0.21", "tree-sitter-languages>=1.10"]
+
 [project.urls]
 Homepage = "https://github.com/Ar9av/obsidian-wiki"
 Repository = "https://github.com/Ar9av/obsidian-wiki"
