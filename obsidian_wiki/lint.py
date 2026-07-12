@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from obsidian_wiki.trust import TRUST_LEDGER_RELATIVE_PATH, check_trust_ledger
 
-SKIP_DIRS = frozenset("_raw _archived _staging _archives _bootstrap .obsidian".split())
+SKIP_DIRS = frozenset("_raw _archived _staging _archives _bootstrap .obsidian .git".split())
 REQUIRED_FRONTMATTER = (
     "title",
     "category",
@@ -29,8 +29,10 @@ _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 _FIELD_RE = re.compile(r"^([A-Za-z_][\w-]*):", re.MULTILINE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
-_RELATIONSHIP_TYPE_RE = re.compile(r"^\s*-\s*type:\s*['\"]?([^'\"#]+?)['\"]?\s*$")
-_RELATIONSHIP_TARGET_RE = re.compile(r"^\s*target:\s*['\"]?([^'\"#]+?)['\"]?\s*$")
+_RELATIONSHIP_LIST_FIELD_RE = re.compile(
+    r"^\s*-\s*(type|target):\s*(.*?)\s*$"
+)
+_RELATIONSHIP_FIELD_RE = re.compile(r"^\s+(type|target):\s*(.*?)\s*$")
 
 
 def _slug(text: str) -> str:
@@ -73,28 +75,45 @@ def _parse_frontmatter_values(frontmatter: str) -> dict[str, str]:
     return values
 
 
+def _relationship_scalar(raw: str) -> str:
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1].strip()
+    return value.split(" #", 1)[0].strip()
+
+
 def _parse_relationships(frontmatter: str) -> list[dict[str, str]]:
     relationships: list[dict[str, str]] = []
     current: dict[str, str] | None = None
     in_relationships = False
     for line in frontmatter.splitlines():
-        if line == "relationships:":
+        if line.startswith("relationships:") and not line.startswith((" ", "\t")):
             in_relationships = True
+            inline = line.split(":", 1)[1].strip()
+            if inline in {"[]", "null", "~"}:
+                return []
+            if inline:
+                relationships.append({"parse_error": "inline_relationships_not_supported"})
+                return relationships
             continue
         if in_relationships and line and not line.startswith((" ", "\t")):
             break
         if not in_relationships:
             continue
-        type_match = _RELATIONSHIP_TYPE_RE.match(line)
-        if type_match:
-            if current:
+        item_match = _RELATIONSHIP_LIST_FIELD_RE.match(line)
+        if item_match:
+            if current is not None:
                 relationships.append(current)
-            current = {"type": type_match.group(1).strip()}
+            current = {item_match.group(1): _relationship_scalar(item_match.group(2))}
             continue
-        target_match = _RELATIONSHIP_TARGET_RE.match(line)
-        if target_match and current is not None:
-            current["target"] = target_match.group(1).strip()
-    if current:
+        field_match = _RELATIONSHIP_FIELD_RE.match(line)
+        if field_match and current is not None:
+            key = field_match.group(1)
+            if key in current:
+                current["parse_error"] = f"duplicate_relationship_{key}"
+            else:
+                current[key] = _relationship_scalar(field_match.group(2))
+    if current is not None:
         relationships.append(current)
     return relationships
 
@@ -113,6 +132,7 @@ def _parse_page(path: Path, vault: Path) -> dict[str, Any]:
     frontmatter = front_match.group(1) if front_match else ""
     fields = set(_FIELD_RE.findall(frontmatter))
     values = _parse_frontmatter_values(frontmatter)
+    relative = path.relative_to(vault)
 
     links: list[str] = []
     for raw in _WIKILINK_RE.findall(text):
@@ -125,8 +145,8 @@ def _parse_page(path: Path, vault: Path) -> dict[str, Any]:
             links.append(target)
 
     return {
-        "path": str(path.relative_to(vault)),
-        "node_id": _normalise_node_id(str(path.relative_to(vault).with_suffix(""))),
+        "path": relative.as_posix(),
+        "node_id": _normalise_node_id(relative.with_suffix("").as_posix()),
         "slug": _slug(path.stem),
         "title": values.get("title", "").strip() or path.stem,
         "summary": values.get("summary", "").strip(),
@@ -136,9 +156,12 @@ def _parse_page(path: Path, vault: Path) -> dict[str, Any]:
     }
 
 
-def lint_vault(vault: Path, *, require_trust_ledger: bool = False) -> dict[str, Any]:
+def lint_vault(vault: Path, *, require_trust_ledger: bool = True) -> dict[str, Any]:
     pages = [_parse_page(path, vault) for path in _iter_pages(vault)]
-    by_slug = {page["slug"]: page for page in pages}
+    slug_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for page in pages:
+        slug_index[page["slug"]].append(page)
+    by_slug = {slug: matches[0] for slug, matches in slug_index.items()}
     by_node_id = {page["node_id"]: page for page in pages}
     incoming: dict[str, int] = defaultdict(int)
 
@@ -188,6 +211,15 @@ def lint_vault(vault: Path, *, require_trust_ledger: bool = False) -> dict[str, 
     typed_relationship_issues: list[dict[str, Any]] = []
     for page in pages:
         for index, relationship in enumerate(page["relationships"]):
+            if "parse_error" in relationship:
+                typed_relationship_issues.append(
+                    {
+                        "page": page["path"],
+                        "index": index,
+                        "issue": relationship["parse_error"],
+                    }
+                )
+                continue
             relation_type = relationship.get("type", "")
             target_raw = relationship.get("target", "")
             if relation_type not in ALLOWED_RELATIONSHIP_TYPES:
@@ -201,9 +233,21 @@ def lint_vault(vault: Path, *, require_trust_ledger: bool = False) -> dict[str, 
                 )
                 continue
             target = _normalise_node_id(target_raw)
-            resolved = by_node_id.get(target)
-            if resolved is None and "/" not in target:
-                resolved = by_slug.get(target)
+            if "/" in target:
+                resolved = by_node_id.get(target)
+            else:
+                matches = slug_index.get(target, [])
+                if len(matches) > 1:
+                    typed_relationship_issues.append(
+                        {
+                            "page": page["path"],
+                            "index": index,
+                            "issue": "ambiguous_target",
+                            "target": target,
+                        }
+                    )
+                    continue
+                resolved = matches[0] if matches else None
             if resolved is None:
                 typed_relationship_issues.append(
                     {

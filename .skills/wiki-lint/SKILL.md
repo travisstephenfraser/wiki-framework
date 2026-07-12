@@ -237,8 +237,13 @@ Staleness is never stored — it is computed at read time: `is_stale = (today �
 **How to check:** Run the deterministic ledger validator first:
 
 ```bash
-obsidian-wiki trust-check "$OBSIDIAN_VAULT_PATH" --json --pretty
+obsidian-wiki trust-check "$OBSIDIAN_VAULT_PATH" --strict --json --pretty
 ```
+
+Use `--strict` for CI and scheduled gates: stale, unreviewed, or missing-page
+warnings then return nonzero. Without `--strict`, `trust-check` remains a
+read-only reporting command and returns nonzero only for hard ledger errors or
+score mismatches.
 
 The approved ledger lives at `_meta/trust-ledger.json`. Each entry records the human-reviewed score plus a SHA-256 fingerprint of material page content and evidence metadata. The fingerprint excludes volatile bookkeeping (`updated`, `base_confidence`, and lifecycle transition fields), so timestamp-only edits do not reopen review.
 
@@ -265,7 +270,12 @@ obsidian-wiki trust-record "$OBSIDIAN_VAULT_PATH" \
   --reviewed-at "<ISO-8601 timestamp>" --approved --json --pretty
 ```
 
-`--approved` means a human approved every score being recorded. `--all` is valid only after a full-vault review; use repeatable `--page` for partial reviews so unrelated stale pages remain open. Never run `trust-record` merely to silence warnings.
+`--approved` means a human approved every score being recorded. It is a workflow
+assertion, not a cryptographic signature: keep `_meta/trust-ledger.json` under
+version control and require human diff review before merging ledger changes.
+`--all` is valid only after a full-vault review; use repeatable `--page` for
+partial reviews so unrelated stale pages remain open. Never run `trust-record`
+merely to silence warnings.
 
 **Manual recomputation protocol for stale/unreviewed pages:**
 
@@ -277,13 +287,13 @@ obsidian-wiki trust-record "$OBSIDIAN_VAULT_PATH" \
 
 **How to fix:** There is no automatic confidence fix. Apply only an explicitly approved exact patch, verify its scope, then refresh only the reviewed ledger state. `--consolidate` must never rewrite `base_confidence`.
 
-#### Migration timeline
+#### Current enforcement
 
-| Phase | When | Behavior on missing fields |
-|---|---|---|
-| Phase 1: Soft launch | Initial PR | Warning only — missing `base_confidence` or `lifecycle` on any page |
-| Phase 2: New pages enforced | +2 weeks | Error for newly created pages missing the fields; existing pages still warn even if `updated` is bumped during routine maintenance |
-| Phase 3: Full enforcement | +6 weeks, gated on a backfill script shipping in a separate PR | Error for all pages |
+Full enforcement is active. Every non-reserved content page must contain a
+finite `base_confidence` in `[0.0, 1.0]` and a documented lifecycle value.
+Missing or malformed trust fields, malformed ledger data, and a missing required
+ledger are hard errors. New pages with valid trust fields but no approved ledger
+entry are `unreviewed`; material changes to approved pages are `stale`.
 
 **Phase determination:** treat **Phase 1 as in effect** unless `WIKI_SCHEMA_PHASE` is set to `2` or `3` in the resolved config. The date anchors above refer to the framework repo's release history, which a lint run should never have to consult.
 

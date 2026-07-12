@@ -789,18 +789,22 @@ def cmd_trust_record(args: argparse.Namespace) -> int:
     if vault is None:
         return 1
     path = vault / TRUST_LEDGER_RELATIVE_PATH
-    if args.all:
-        ledger = build_trust_ledger(vault, reviewed_at=args.reviewed_at)
-        recorded_pages = len(ledger["pages"])
-    else:
-        ledger = update_trust_ledger(
-            vault,
-            path,
-            reviewed_at=args.reviewed_at,
-            page_paths=args.page,
-        )
-        recorded_pages = len(set(args.page))
-    write_trust_ledger(path, ledger)
+    try:
+        if args.all:
+            ledger = build_trust_ledger(vault, reviewed_at=args.reviewed_at)
+            recorded_pages = len(ledger["pages"])
+        else:
+            ledger = update_trust_ledger(
+                vault,
+                path,
+                reviewed_at=args.reviewed_at,
+                page_paths=args.page,
+            )
+            recorded_pages = len(set(args.page))
+        write_trust_ledger(path, ledger, vault=vault)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     result = {
         "status": "recorded",
         "ledger_path": str(path),

@@ -70,6 +70,8 @@ def test_lint_vault_passes_clean_graph(tmp_path: Path) -> None:
     _page(vault, "hot.md", links=["alpha"])
     _page(vault, "concepts/alpha.md", links=["beta"])
     _page(vault, "concepts/beta.md", links=["alpha"])
+    ledger = build_trust_ledger(vault, reviewed_at="2026-07-12T17:38:39+07:00")
+    write_trust_ledger(vault / "_meta" / "trust-ledger.json", ledger, vault=vault)
 
     report = lint_vault(vault)
 
@@ -94,6 +96,8 @@ def test_lint_vault_warns_on_duplicates_missing_summaries_and_orphans(tmp_path: 
     vault = tmp_path / "vault"
     _page(vault, "concepts/alpha.md", title="Same Title", summary=None)
     _page(vault, "references/beta.md", title="Same Title")
+    ledger = build_trust_ledger(vault, reviewed_at="2026-07-12T17:38:39+07:00")
+    write_trust_ledger(vault / "_meta" / "trust-ledger.json", ledger, vault=vault)
 
     report = lint_vault(vault)
 

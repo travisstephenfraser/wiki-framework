@@ -99,12 +99,100 @@ def test_claim_change_invalidates_review_but_updated_timestamp_does_not(tmp_path
     assert report["stale"] == [{"page": "concepts/alpha.md", "reason": "material_fingerprint_changed"}]
 
 
-def test_confidence_change_is_reported_as_score_mismatch_not_stale_review(tmp_path: Path) -> None:
+def test_material_change_marks_review_stale(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     page = _page(vault, "concepts/alpha.md", confidence=0.53)
     ledger_path = _write_ledger(vault)
+    page.write_text(page.read_text().replace("Reviewed material claim.", "Changed material claim."))
 
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "warn"
+    assert report["stale"] == [
+        {"page": "concepts/alpha.md", "reason": "material_fingerprint_changed"}
+    ]
+
+
+def test_duplicate_confidence_field_fails_instead_of_bypassing_fingerprint(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md", confidence=0.53)
+    ledger_path = _write_ledger(vault)
+    page.write_text(page.read_text().replace("lifecycle: reviewed", "base_confidence: 0.99\nlifecycle: reviewed"))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [
+        {"page": "concepts/alpha.md", "issue": "duplicate top-level field: base_confidence"}
+    ]
+
+
+def test_volatile_field_with_nested_content_fails_closed(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    page.write_text(page.read_text().replace("updated: 2026-07-12T17:38:39+07:00", "updated: 2026-07-12T17:38:39+07:00\n  hidden: material"))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [
+        {"page": "concepts/alpha.md", "issue": "updated must be a scalar"}
+    ]
+
+
+def test_invalid_confidence_is_checked_before_stale_short_circuit(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    changed = page.read_text().replace("Reviewed material claim.", "Changed material claim.")
+    page.write_text(changed.replace("base_confidence: 0.80", "base_confidence: nan"))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["stale"] == []
+    assert report["errors"] == [
+        {"page": "concepts/alpha.md", "issue": "base_confidence is not finite"}
+    ]
+
+
+def test_invalid_lifecycle_fails_closed(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    page.write_text(page.read_text().replace("lifecycle: reviewed", "lifecycle: totally-invalid"))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [
+        {"page": "concepts/alpha.md", "issue": "invalid lifecycle: totally-invalid"}
+    ]
+
+
+def test_inline_comments_on_scalar_trust_fields_remain_valid(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    page.write_text(
+        page.read_text()
+        .replace("base_confidence: 0.80", "base_confidence: 0.80 # reviewed score")
+        .replace("lifecycle: reviewed", "lifecycle: reviewed # human-reviewed")
+    )
+
+    ledger_path = _write_ledger(vault)
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "pass"
+    assert report["counts"]["reviewed"] == 1
+
+
+def test_score_only_change_is_a_failing_mismatch_not_stale(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md", confidence=0.53)
+    ledger_path = _write_ledger(vault)
     page.write_text(page.read_text().replace("base_confidence: 0.53", "base_confidence: 0.88"))
+
     report = check_trust_ledger(vault, ledger_path)
 
     assert report["status"] == "fail"
@@ -126,6 +214,49 @@ def test_new_page_requires_manual_review_instead_of_formula_guess(tmp_path: Path
     assert report["unreviewed"] == [{"page": "concepts/new.md", "reason": "not_in_manual_ledger"}]
 
 
+def test_standalone_trust_check_fails_for_page_missing_trust_fields(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    page.write_text(
+        "\n".join(
+            line
+            for line in page.read_text().splitlines()
+            if not line.startswith(("base_confidence:", "lifecycle:"))
+        )
+        + "\n"
+    )
+    ledger_path = vault / "_meta" / "trust-ledger.json"
+    write_trust_ledger(
+        ledger_path,
+        {
+            "schema_version": 1,
+            "method": "manual-lineage-and-claim-coverage-v1",
+            "reviewed_at": "2026-07-12T17:38:39+07:00",
+            "pages": {},
+        },
+        vault=vault,
+    )
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [
+        {"page": "concepts/alpha.md", "issue": "missing base_confidence"}
+    ]
+
+
+def test_lint_vault_requires_trust_ledger_by_default(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+
+    report = lint_vault(vault)
+
+    assert report["status"] == "fail"
+    assert report["findings"]["confidence_ledger_errors"] == [
+        {"issue": "ledger_missing", "path": str(vault / "_meta" / "trust-ledger.json")}
+    ]
+
+
 def test_non_object_ledger_fails_cleanly(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     _page(vault, "concepts/alpha.md")
@@ -139,12 +270,186 @@ def test_non_object_ledger_fails_cleanly(tmp_path: Path) -> None:
     assert report["errors"] == [{"issue": "ledger_must_be_an_object"}]
 
 
+def test_duplicate_json_keys_are_rejected(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    text = ledger_path.read_text()
+    ledger_path.write_text(text.replace('"schema_version": 1', '"schema_version": 1, "schema_version": 1'))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"][0]["issue"] == "ledger_unreadable"
+    assert "duplicate JSON key" in report["errors"][0]["detail"]
+
+
+def test_boolean_schema_version_fails_closed(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    ledger = json.loads(ledger_path.read_text())
+    ledger["schema_version"] = True
+    ledger_path.write_text(json.dumps(ledger))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"][0]["issue"] == "unsupported_schema_version"
+
+
+def test_invalid_utf8_ledger_returns_structured_failure(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = vault / "_meta" / "trust-ledger.json"
+    ledger_path.parent.mkdir(parents=True)
+    ledger_path.write_bytes(b"\xff\xfe")
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"][0]["issue"] == "ledger_unreadable"
+
+
+def test_invalid_review_timestamp_is_rejected_by_record_cli(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+
+    record = _run_cli(
+        home,
+        "trust-record",
+        str(vault),
+        "--all",
+        "--reviewed-at",
+        "not-an-iso-timestamp",
+        "--approved",
+        "--json",
+    )
+
+    assert record.returncode == 1
+    assert "reviewed_at must be an ISO-8601 timestamp with timezone" in record.stderr
+    assert "Traceback" not in record.stderr
+    assert not (vault / "_meta" / "trust-ledger.json").exists()
+
+
+def test_invalid_ledger_review_timestamp_fails_closed(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    ledger = json.loads(ledger_path.read_text())
+    ledger["reviewed_at"] = "yesterday"
+    ledger_path.write_text(json.dumps(ledger))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [{"issue": "invalid_reviewed_at"}]
+
+
+def test_trust_writer_rejects_symlinked_meta_directory(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    outside = tmp_path / "outside"
+    vault.mkdir()
+    outside.mkdir()
+    (vault / "_meta").symlink_to(outside, target_is_directory=True)
+    ledger = {"schema_version": 1, "method": "manual-lineage-and-claim-coverage-v1", "pages": {}}
+
+    try:
+        write_trust_ledger(vault / "_meta" / "trust-ledger.json", ledger, vault=vault)
+    except RuntimeError as exc:
+        assert "outside the resolved vault" in str(exc) or "symlink" in str(exc)
+    else:
+        raise AssertionError("symlinked _meta directory was accepted")
+
+    assert not (outside / "trust-ledger.json").exists()
+
+
+def test_trust_writer_never_follows_predictable_temp_symlink(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    meta = vault / "_meta"
+    meta.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("sentinel\n")
+    (meta / "trust-ledger.json.tmp").symlink_to(outside)
+    ledger = {"schema_version": 1, "method": "manual-lineage-and-claim-coverage-v1", "pages": {}}
+
+    write_trust_ledger(meta / "trust-ledger.json", ledger, vault=vault)
+
+    assert outside.read_text() == "sentinel\n"
+    assert json.loads((meta / "trust-ledger.json").read_text())["schema_version"] == 1
+
+
+def test_trust_writer_rejects_symlinked_ledger_destination(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    meta = vault / "_meta"
+    meta.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("sentinel\n")
+    destination = meta / "trust-ledger.json"
+    destination.symlink_to(outside)
+    ledger = {"schema_version": 1, "method": "manual-lineage-and-claim-coverage-v1", "pages": {}}
+
+    try:
+        write_trust_ledger(destination, ledger, vault=vault)
+    except RuntimeError as exc:
+        assert "outside the resolved vault" in str(exc) or "symlink" in str(exc)
+    else:
+        raise AssertionError("symlinked ledger destination was accepted")
+
+    assert outside.read_text() == "sentinel\n"
+
+
 def test_out_of_range_reviewed_confidence_is_invalid_ledger_data(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     _page(vault, "concepts/alpha.md")
     ledger_path = _write_ledger(vault)
     ledger = json.loads(ledger_path.read_text())
     ledger["pages"]["concepts/alpha.md"]["reviewed_confidence"] = 2.0
+    ledger_path.write_text(json.dumps(ledger))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [{"page": "concepts/alpha.md", "issue": "invalid_ledger_entry"}]
+
+
+def test_boolean_reviewed_confidence_is_invalid_ledger_data(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    ledger = json.loads(ledger_path.read_text())
+    ledger["pages"]["concepts/alpha.md"]["reviewed_confidence"] = True
+    ledger_path.write_text(json.dumps(ledger))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"] == [{"page": "concepts/alpha.md", "issue": "invalid_ledger_entry"}]
+
+
+def test_non_standard_json_number_is_unreadable_not_approved(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    ledger = json.loads(ledger_path.read_text())
+    ledger["pages"]["concepts/alpha.md"]["reviewed_confidence"] = float("nan")
+    ledger_path.write_text(json.dumps(ledger))
+
+    report = check_trust_ledger(vault, ledger_path)
+
+    assert report["status"] == "fail"
+    assert report["errors"][0]["issue"] == "ledger_unreadable"
+
+
+def test_malformed_fingerprint_and_entry_timestamp_fail_closed(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    ledger_path = _write_ledger(vault)
+    ledger = json.loads(ledger_path.read_text())
+    entry = ledger["pages"]["concepts/alpha.md"]
+    entry["material_fingerprint"] = "garbage"
+    entry["reviewed_at"] = "yesterday"
     ledger_path.write_text(json.dumps(ledger))
 
     report = check_trust_ledger(vault, ledger_path)
@@ -189,7 +494,7 @@ def test_typed_relationship_resolver_uses_exact_vault_paths(tmp_path: Path) -> N
     _page(vault, "projects/demo/beta.md", relationships=[("related_to", "projects/demo/alpha")])
     _page(vault, "concepts/broken.md", relationships=[("related_to", "skills/missing")])
 
-    report = lint_vault(vault)
+    report = lint_vault(vault, require_trust_ledger=False)
 
     assert report["findings"]["typed_relationship_issues"] == [
         {
@@ -199,6 +504,57 @@ def test_typed_relationship_resolver_uses_exact_vault_paths(tmp_path: Path) -> N
             "target": "skills/missing",
         }
     ]
+
+
+def test_target_first_relationship_order_is_parsed_and_validated(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    _page(vault, "skills/beta.md")
+    page.write_text(
+        page.read_text().replace(
+            "lifecycle: reviewed",
+            'lifecycle: reviewed\nrelationships:\n  - target: "[[skills/missing]]"\n    type: related_to',
+        )
+    )
+
+    report = lint_vault(vault, require_trust_ledger=False)
+
+    assert report["findings"]["typed_relationship_issues"] == [
+        {
+            "page": "concepts/alpha.md",
+            "index": 0,
+            "issue": "missing_target",
+            "target": "skills/missing",
+        }
+    ]
+
+
+def test_basename_only_relationship_is_rejected_when_ambiguous(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md", relationships=[("related_to", "beta")])
+    _page(vault, "skills/beta.md")
+    _page(vault, "projects/demo/beta.md")
+
+    report = lint_vault(vault, require_trust_ledger=False)
+
+    assert report["findings"]["typed_relationship_issues"] == [
+        {
+            "page": "concepts/alpha.md",
+            "index": 0,
+            "issue": "ambiguous_target",
+            "target": "beta",
+        }
+    ]
+
+
+def test_empty_inline_relationship_list_is_valid(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    page.write_text(page.read_text().replace("lifecycle: reviewed", "lifecycle: reviewed\nrelationships: []"))
+
+    report = lint_vault(vault, require_trust_ledger=False)
+
+    assert report["findings"]["typed_relationship_issues"] == []
 
 
 def test_lint_excludes_bootstrap_scaffolding_from_page_health(tmp_path: Path) -> None:
