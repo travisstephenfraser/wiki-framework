@@ -4,7 +4,10 @@ description: >
   Audit and maintain the health of the Obsidian wiki. Use this skill when the user wants to check their
   wiki for issues, find orphaned pages, detect contradictions, identify stale content, fix broken wikilinks,
   or perform general maintenance on their knowledge base. Also triggers on "clean up the wiki",
-  "what needs fixing", "audit my notes", or "wiki health check".
+  "what needs fixing", "audit my notes", or "wiki health check". Add --consolidate to switch from
+  report-only to act-and-report mode (the "dream cycle"): fixes broken links, adds missing cross-references
+  for orphans, corrects lifecycle states, demotes stale peripheral pages, normalizes tag aliases, and adds
+  contradiction callouts — all with a dry-run preview and explicit user confirmation before any writes.
 ---
 
 # Wiki Lint — Health Audit
@@ -15,7 +18,7 @@ You are performing a health check on an Obsidian wiki. Your goal is to find and 
 
 ## Before You Start
 
-1. Read `.env` to get `OBSIDIAN_VAULT_PATH`
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`
 2. Read `index.md` for the full page inventory
 3. Read `log.md` for recent activity context
 
@@ -152,6 +155,144 @@ Checks that `visibility/` tags are applied correctly and aren't silently missing
 - For missing `sources:`: add provenance or escalate to the user — don't auto-fill
 - For taxonomy contamination: remove the `visibility/` entries from `_meta/taxonomy.md`
 
+### 10. Misc Promotion Candidates
+
+Find pages in `misc/` that have accumulated enough project affinity to be promoted.
+
+**How to check:**
+- Glob `$OBSIDIAN_VAULT_PATH/misc/*.md`
+- For each page, read the `affinity` frontmatter field
+- Flag pages where any single project's score ≥ 3
+
+**How to fix:**
+- Run the `cross-linker` skill first if affinity scores look stale (e.g., `affinity: {}` on a page with many wikilinks)
+- To promote: move the page to `projects/<project-name>/references/` (or another appropriate category), update its `category` frontmatter, remove `promotion_status`, and grep the vault for backlinks to update them
+
+### 12. Confidence and Lifecycle Schema
+
+Enforces the confidence + lifecycle frontmatter schema (see `llm-wiki/SKILL.md`, Confidence and Lifecycle section).
+
+Two modes:
+- **`--check`** (default, read-only) — reports errors and warnings
+- **`--fix`** — may rewrite `base_confidence` only when drift is detected (Rule 12e); never rewrites `lifecycle`
+
+#### Rule 12a — `lifecycle` enum validation
+
+**How to check:** Grep frontmatter for `^lifecycle:` across all pages. Flag any value not in `{draft, reviewed, verified, disputed, archived}`.
+
+**How to fix:** n/a (only a human should set lifecycle state)
+
+#### Rule 12b — `base_confidence` range
+
+**How to check:** Grep frontmatter for `^base_confidence:` across all pages. Flag any value outside `[0.0, 1.0]` or any page missing the field entirely.
+
+**How to fix:** n/a (wrong value means the skill computed it wrong — surface for manual correction)
+
+#### Rule 12c — Stale page report (computed overlay)
+
+Staleness is never stored — it is computed at read time: `is_stale = (today − updated) > 90 days`.
+
+**How to check:** For each page, read `updated:` from frontmatter and compute `is_stale`. If stale, also check `lifecycle:`. Report:
+- Stale pages with `lifecycle: verified` with a louder annotation (these are the most dangerous — high-trust pages that may be wrong)
+- All other stale pages as a standard warning
+
+**How to fix:** `--fix` does **not** rewrite `lifecycle`. Staleness clears automatically when a re-ingest bumps `updated`.
+
+#### Rule 12d — Supersession integrity
+
+**How to check:** For each page with `superseded_by: "[[target]]"`:
+- Verify the target page exists
+- Verify the target page is not itself `archived` (no circular or chained supersession)
+- Verify there are no cycles (A supersedes B which supersedes A)
+- Warn if `lifecycle != archived` while `superseded_by` is set (inconsistent state)
+
+**How to fix:** n/a — flag for human resolution
+
+#### Rule 12e — Confidence drift
+
+**How to check:** For pages that have both `base_confidence:` and `sources:` in frontmatter, recompute `base_confidence` using the formula in `llm-wiki/SKILL.md`. If the stored value differs from the recomputed value by more than 0.05, flag it as drift.
+
+**How to fix (`--fix` only):** Rewrite the `base_confidence` field to the recomputed value. This is the **only rule** that mutates frontmatter automatically.
+
+#### Migration timeline
+
+| Phase | When | Behavior on missing fields |
+|---|---|---|
+| Phase 1: Soft launch | Initial PR | Warning only — missing `base_confidence` or `lifecycle` on any page |
+| Phase 2: New pages enforced | +2 weeks | Error for newly created pages missing the fields; existing pages still warn even if `updated` is bumped during routine maintenance |
+| Phase 3: Full enforcement | +6 weeks, gated on a backfill script shipping in a separate PR | Error for all pages |
+
+#### Output additions
+
+Add to the Wiki Health Report:
+
+```markdown
+### Confidence/Lifecycle Issues (N found)
+- `concepts/foo.md` — missing `lifecycle` field (warning: Phase 1)
+- `entities/bar.md` — `lifecycle: stalestate` is not a valid enum value
+- `concepts/scaling.md` — `base_confidence: 1.4` is out of range [0.0, 1.0]
+- `synthesis/old-analysis.md` — STALE (last updated 2025-10-01, 182 days ago) lifecycle=verified ⚠️ HIGH PRIORITY
+- `concepts/outdated.md` — STALE (last updated 2025-11-15, 137 days ago) lifecycle=draft
+- `entities/tool-v1.md` — `superseded_by: [[entities/tool-v2]]` but lifecycle=draft (expected archived)
+- `concepts/drift-example.md` — base_confidence drift: stored=0.80, recomputed=0.59 (delta=0.21)
+```
+
+Append to the `LINT` log entry:
+```
+- [TIMESTAMP] LINT ... lifecycle_issues=N
+```
+
+### 13. Typed Relationships Validity
+
+Validate `relationships:` frontmatter blocks. Skip pages that have no `relationships:` block — the field is optional.
+
+**Allowed types:** `extends`, `implements`, `contradicts`, `derived_from`, `uses`, `replaces`, `related_to`
+
+**How to check:**
+- Grep frontmatter for `^relationships:` across all vault pages
+- For each page that has a `relationships:` block, read its frontmatter (not the full page body)
+- For each entry in the block:
+  1. **Type validation** — flag any `type:` value not in the allowed set above
+  2. **Broken target** — strip `[[` and `]]` from the `target:` string, normalize (lowercase, spaces→hyphens, strip `.md`), and check whether a `.md` file at that path exists in the vault. Flag unresolved targets.
+  3. **Self-reference** — flag any entry where the resolved target equals the page's own node id
+
+**How to fix:**
+- Invalid type: correct the value to the nearest allowed type, or use `related_to` when the type is ambiguous
+- Broken target: update or remove the entry; if the target page should exist, create it first
+- Self-reference: remove the entry
+
+**Output additions:**
+
+```markdown
+### Typed Relationship Issues (N found)
+- `concepts/foo.md` — relationships[1]: type "contradication" is not an allowed type (did you mean "contradicts"?)
+- `concepts/bar.md` — relationships[0]: target "[[skills/nonexistent-skill]]" resolves to no page in vault
+- `entities/baz.md` — relationships[2]: self-reference (target resolves to this page's own id)
+```
+
+Append to the `LINT` log entry:
+```
+... relationship_issues=N
+```
+
+### 11. Synthesis Gaps
+
+Identify high-value synthesis opportunities the wiki is missing — concept pairs that co-occur across many pages but have no `synthesis/` page connecting them.
+
+**How to check:**
+- List all pages in `synthesis/` — collect the concept pairs each one already covers (from its `[[wikilinks]]` or title)
+- Pick 10-15 frequently linked concepts from `concepts/` and `entities/`
+- For each pair, run a quick grep to count pages that link to both:
+  ```bash
+  grep -rl "\[\[ConceptA\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/a.txt
+  grep -rl "\[\[ConceptB\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/b.txt
+  comm -12 <(sort /tmp/a.txt) <(sort /tmp/b.txt) | wc -l
+  ```
+- Flag pairs with co-occurrence ≥ 3 that have no existing synthesis page
+
+**How to fix:**
+- Run `/wiki-synthesize` to automatically discover and fill the top gaps
+
 ## Output Format
 
 Report findings as a structured list:
@@ -195,13 +336,197 @@ Report findings as a structured list:
 - `entities/user-records.md` — contains `email:` value pattern but no `visibility/pii` tag
 - `concepts/auth-flow.md` — tagged `visibility/pii` but missing `sources:` frontmatter
 - `_meta/taxonomy.md` — contains `visibility/internal` entry (system tag must not be in taxonomy)
+
+### Misc Promotion Candidates (N found)
+Pages in misc/ that have ≥ 3 connections to a single project and are ready to be promoted:
+
+| Page | Top Project | Affinity Score |
+|---|---|---|
+| `misc/web-martinfowler-articles-microservices.md` | `obsidian-wiki` | 4 |
+
+### Typed Relationship Issues (N found)
+- `concepts/foo.md` — relationships[1]: type "contradication" is not an allowed type
+- `concepts/bar.md` — relationships[0]: target "[[skills/nonexistent]]" resolves to no page
+
+### Synthesis Gaps (N found)
+Concept pairs that co-occur frequently but have no synthesis page:
+
+| Pair | Co-occurrence | Suggested Action |
+|---|---|---|
+| [[Caching]] × [[Consistency]] | 5 pages | Run `/wiki-synthesize` |
+| [[Testing]] × [[Observability]] | 3 pages | Run `/wiki-synthesize` |
 ```
 
 ## After Linting
 
 Append to `log.md`:
 ```
-- [TIMESTAMP] LINT issues_found=N orphans=X broken_links=Y stale=Z contradictions=W prov_issues=P missing_summary=S fragmented_clusters=F visibility_issues=V
+- [TIMESTAMP] LINT issues_found=N orphans=X broken_links=Y stale=Z contradictions=W prov_issues=P missing_summary=S fragmented_clusters=F visibility_issues=V promotion_candidates=C synthesis_gaps=G relationship_issues=R
 ```
 
 Offer to fix issues automatically or let the user decide which to address.
+
+---
+
+## Consolidate Mode (`--consolidate`)
+
+Triggered by `wiki-lint --consolidate`. Switches from report-only to **act-and-report** — the "dream cycle" that runs periodically so the wiki self-heals.
+
+### Safety protocol
+
+**Always run in dry-run first.** Before writing anything:
+
+1. Run all 12 lint checks (Step 1–12 above).
+2. Print the planned consolidation actions as a structured list (see Dry-Run Output below).
+3. Ask the user: `"Apply these N changes? [yes / no / select]"`.
+4. Only proceed with writes after explicit confirmation. If the user selects individual actions, apply only those.
+5. Never merge pages — use `wiki-dedup` for that. Only link, promote, demote, and flag.
+
+### Consolidation actions (in order, after confirmation)
+
+#### Action 1: Fix broken wikilinks
+
+For each broken `[[Target]]` found in Check 2:
+- Search the vault for a page whose title or filename is the closest fuzzy match (use `Grep` across `index.md` titles)
+- If a unique best match exists (edit distance ≤ 2 characters or same root word): rewrite the link. Note the rewrite: `[[Oringal]] → [[corrected-page]]`.
+- If no match or ambiguous: convert to plain text (`~~[[Target]]~~` → `Target`) and add a comment `<!-- broken link: no match found -->`.
+- Never create a new page just to satisfy a broken link.
+
+#### Action 2: Add missing cross-references for orphans
+
+For each orphan page found in Check 1 (zero incoming links):
+- Grep the vault body text for mentions of the page's title or aliases (case-insensitive).
+- For each mention found in another page, add a `[[wikilink]]` replacing the plain-text mention.
+- Limit to 3 insertions per orphan — don't flood pages with links.
+- This is scoped to orphans only (different from `cross-linker` which runs broadly).
+
+#### Action 3: Correct lifecycle states
+
+Apply these rules automatically (they don't require human judgment — they enforce the documented state machine):
+- **Promote `draft` → `reviewed`:** pages where `lifecycle: draft` AND `created` > 30 days ago AND `base_confidence > 0.7`. Set `lifecycle: reviewed`, `lifecycle_changed: <today>`, `lifecycle_reason: "auto-promoted by wiki-lint --consolidate: age>30d, confidence>0.7"`.
+- **Demote `verified` → `stale`:** NOT a state transition — `stale` is a computed overlay, not a lifecycle value. Instead: for verified pages where `is_stale = (today − updated) > 180 days`, add a callout at the top of the page body: `> ⚠️ **Stale**: This page was last updated <date>. Verify before relying on it.` Only add if the callout isn't already present.
+- **Do not change `reviewed` → `verified` or any other transition** — those are human-only.
+
+#### Action 4: Tier demotion
+
+For pages with `tier: supporting` (or unset) that have 0 incoming links AND haven't been updated in 90+ days:
+- Set `tier: peripheral`.
+- Emit a list of demotions for the user to review.
+- Do not demote `tier: core` pages automatically — those were manually set.
+
+#### Action 5: Tag normalization
+
+Read `_meta/taxonomy.md` for the alias mapping (e.g., `ml → machine-learning`). For each page, replace known alias tags with their canonical form in the `tags:` frontmatter field. This is a subset of `tag-taxonomy`'s work — only alias fixes, no full audit.
+
+#### Action 6: Contradiction callouts
+
+For each pair of pages marked as contradicting each other (via `relationships: contradicts` in frontmatter, or flagged in Check 5):
+- Check whether a `> ⚠️ Contradiction flagged with [[Other Page]]` callout already exists near the relevant claim.
+- If not, add it at the end of the "Key Ideas" section (or before "Open Questions" if no "Key Ideas" section). Keep it concise — one line.
+- Do not resolve the contradiction; only flag it visually.
+
+### Action 7: Write consolidation report
+
+After all actions, write a report to `synthesis/consolidation-<YYYY-MM-DD>.md`:
+
+```markdown
+---
+title: Consolidation Report <YYYY-MM-DD>
+category: synthesis
+tags: [maintenance, consolidation]
+sources: []
+summary: Auto-generated consolidation report from wiki-lint --consolidate run on <date>.
+lifecycle: draft
+lifecycle_changed: <date>
+tier: peripheral
+created: <ISO timestamp>
+updated: <ISO timestamp>
+---
+
+# Consolidation Report — <YYYY-MM-DD>
+
+## Summary
+- Broken links fixed: N
+- Cross-references added: M
+- Lifecycle states updated: K
+- Tier demotions: D
+- Tags normalized: T
+- Contradiction callouts added: C
+
+## Broken Link Fixes
+- `concepts/foo.md:12` — [[OldTarget]] → [[correct-target]]
+- `entities/bar.md:8` — [[Missing]] → `Missing` (no match found)
+
+## Cross-References Added (orphan rescue)
+- `concepts/baz.md` — now linked from: [[concepts/alpha]], [[skills/beta]]
+
+## Lifecycle Updates
+- `concepts/old-draft.md` — draft → reviewed (age 45d, confidence 0.74)
+- `synthesis/stale-verified.md` — stale callout added (last updated 2025-10-01)
+
+## Tier Demotions
+- `concepts/unused-concept.md` — supporting → peripheral (0 links, 120 days stale)
+
+## Tag Normalizations
+- `entities/some-tool.md` — `ml` → `machine-learning`
+
+## Contradiction Callouts
+- `concepts/scaling.md` — flagged contradiction with [[synthesis/efficiency]]
+```
+
+### Dry-Run Output (shown before any writes)
+
+```
+wiki-lint --consolidate — Dry Run
+
+Planned actions (N total):
+[1] Fix broken link: concepts/foo.md:12 [[OldTarget]] → [[correct-target]]
+[2] Add cross-ref: concepts/baz.md ← [[concepts/alpha]] (orphan rescue)
+[3] Lifecycle: concepts/old-draft.md → reviewed (age 45d, confidence 0.74)
+[4] Tier demotion: concepts/unused.md → peripheral (0 links, 112 days stale)
+[5] Tag alias: entities/some-tool.md: ml → machine-learning
+[6] Contradiction callout: concepts/scaling.md ↔ [[synthesis/efficiency]]
+
+Apply these 6 changes? [yes / no / select by number]
+```
+
+### Log entry for consolidate mode
+
+```
+- [TIMESTAMP] LINT_CONSOLIDATE links_fixed=N orphans_rescued=M lifecycle_updates=K tier_demotions=D tag_fixes=T contradiction_callouts=C report=synthesis/consolidation-YYYY-MM-DD.md
+```
+
+## QMD Refresh After Vault Writes
+
+QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
+
+Use `$QMD_CLI` if set; otherwise use `qmd`.
+
+```bash
+${QMD_CLI:-qmd} update
+```
+
+If the output says vectors are needed or embeddings may be stale, run:
+
+```bash
+${QMD_CLI:-qmd} embed
+```
+
+Verify the collection with either:
+
+```bash
+${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
+```
+
+or, when a specific page path is known:
+
+```bash
+${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
+```
+
+Record one of:
+- `QMD refreshed: update + embed + verified`
+- `QMD refreshed: update only + verified`
+- `QMD skipped: QMD_WIKI_COLLECTION unset`
+- `QMD skipped: qmd CLI unavailable`
+- `QMD failed: <short error summary>`

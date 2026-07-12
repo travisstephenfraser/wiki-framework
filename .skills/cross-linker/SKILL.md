@@ -18,9 +18,11 @@ You are weaving the wiki's knowledge graph tighter by finding and inserting miss
 
 ## Before You Start
 
-1. Read `.env` to get `OBSIDIAN_VAULT_PATH`
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_LINK_FORMAT` (default: `wikilink`).
 2. Read `index.md` to get the full inventory of pages and their one-line descriptions
 3. Skim `log.md` to see what was recently ingested (focus linking effort on new pages)
+
+When inserting links in Step 4, apply the link format from `llm-wiki/SKILL.md` (Link Format section) using the `OBSIDIAN_LINK_FORMAT` value. When `OBSIDIAN_LINK_FORMAT=markdown`, compute the relative `.md` path from the **file being edited** to the target page.
 
 ## Step 1: Build the Page Registry
 
@@ -126,7 +128,63 @@ If the term isn't mentioned naturally in the body but the pages are semantically
 
 If a `## Related` section already exists, append to it. Don't duplicate existing entries.
 
-## Step 5: Report
+### 4c: Infer and write relationship type
+
+For every EXTRACTED or INFERRED link added (inline or related section), infer a semantic relationship type from the surrounding sentence context and write it to the page's `relationships:` frontmatter block. Skip AMBIGUOUS links.
+
+**Type inference rules** — scan the sentence containing the mention (or, for related-section links, the page title and shared-tag context):
+
+| Sentence pattern | Inferred type |
+|---|---|
+| "X extends / builds on / generalises Y" | `extends` |
+| "X implements / is an implementation of Y" | `implements` |
+| "X contradicts / opposes / refutes / is at odds with Y" | `contradicts` |
+| "X is derived from / based on / adapted from Y" | `derived_from` |
+| "X uses / relies on / depends on / requires Y" | `uses` |
+| "X replaces / supersedes / deprecates Y" | `replaces` |
+| Shared tags or cross-category inference with no directional cue | `related_to` |
+
+If the surrounding context is ambiguous or the link came from shared-tag matching (no in-body mention), default to `related_to`.
+
+**Writing the block:**
+
+Read the page's YAML frontmatter. If a `relationships:` block already exists, append new entries without duplicating existing targets. If the block is absent, add it after `aliases:` (or after `tags:` when `aliases:` is missing).
+
+```yaml
+relationships:
+  - target: "[[concepts/knowledge-graphs]]"
+    type: uses
+```
+
+Always use wikilink format (`[[path/to/page]]`) for `target` values in the `relationships:` YAML block — regardless of `OBSIDIAN_LINK_FORMAT`. The `OBSIDIAN_LINK_FORMAT` setting controls body content; frontmatter properties always use wikilink syntax so that `wiki-export` can reliably parse them.
+
+Only add entries for links added in this cross-linker run — do not touch typed entries that were already present.
+
+## Step 5: Score Misc Page Affinity
+
+After the main linking pass, update affinity scores for all pages in `misc/` (pages with `promotion_status: misc` in their frontmatter, or located under the `misc/` directory).
+
+For each misc page:
+
+1. **Collect outgoing links** — all `[[wikilinks]]` in the page body
+2. **Collect incoming links** — grep the vault for `[[misc/<slug>]]` and `[[<slug>]]` references
+3. For each linked page (both directions), check if it belongs to a project:
+   - Lives under `projects/<project-name>/`
+   - Has a `project:` frontmatter field matching a project name
+4. Group by project name and sum: `outgoing_links + incoming_links`
+5. Update the `affinity` frontmatter block on the misc page:
+
+```yaml
+affinity:
+  obsidian-wiki: 3
+  another-project: 1
+```
+
+6. If any project's score ≥ 3: flag this page as a **promotion candidate** and record it for the report
+
+**Efficiency note:** only read the full body of misc pages — other pages only need a frontmatter grep to determine their project membership.
+
+## Step 6: Report
 
 Present a summary:
 
@@ -135,27 +193,38 @@ Present a summary:
 
 ### Links Added: 23 across 12 pages
 
-| Page | Links Added | Confidence | Type |
-|---|---|---|---|
-| `projects/my-project/my-project.md` | 3 | EXTRACTED | 2 inline, 1 related |
-| `entities/jane-doe.md` | 5 | INFERRED | 3 inline, 2 related |
-| ... | | | |
+| Page | Links Added | Confidence | Placement | Relationship Types |
+|---|---|---|---|---|
+| `projects/my-project/my-project.md` | 3 | EXTRACTED | 2 inline, 1 related | uses ×2, related_to ×1 |
+| `entities/jane-doe.md` | 5 | INFERRED | 3 inline, 2 related | extends ×1, uses ×3, related_to ×1 |
+| ... | | | | |
 
 ### Orphan Pages Remaining: 2
 - `references/foo.md` — no incoming or outgoing links found
 - `concepts/bar.md` — could not find related pages
+
+### Misc Promotion Candidates: N
+Pages in misc/ that have ≥ 3 connections to a single project — ready to be promoted:
+
+| Page | Top Project | Score |
+|---|---|---|
+| `misc/web-martinfowler-articles-microservices.md` | `obsidian-wiki` | 4 |
+
+To promote: move the page to `projects/<project-name>/references/` and update all backlinks.
 
 ### Pages Skipped: 3
 - `index.md`, `log.md` — special files
 - `_archives/*` — archived content
 ```
 
-## Step 6: Update Log
+## Step 7: Update Log and Hot Cache
 
 Append to `log.md`:
 ```
-- [TIMESTAMP] CROSS_LINK pages_scanned=N links_added=M pages_modified=P orphans_remaining=Q
+- [TIMESTAMP] CROSS_LINK pages_scanned=N links_added=M typed_relations_written=T pages_modified=P orphans_remaining=Q misc_affinity_updated=R promotion_candidates=S
 ```
+
+**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary of what was linked — e.g. "Cross-linked 23 mentions across 12 pages; 2 orphans remain." Keep the last 3 operations. Update `updated` timestamp.
 
 ## Tips
 
@@ -164,3 +233,38 @@ Append to `log.md`:
 - **Don't touch pages in `_archives/`.** Those are frozen snapshots.
 - **Respect existing structure.** If a page carefully curates its links in a `## Key Concepts` section, add to that section rather than creating a separate `## Related`.
 - **Entity pages are link magnets.** An entity like `jane-doe` should be linked from almost every project page. Prioritize these.
+
+## QMD Refresh After Vault Writes
+
+QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
+
+Use `$QMD_CLI` if set; otherwise use `qmd`.
+
+```bash
+${QMD_CLI:-qmd} update
+```
+
+If the output says vectors are needed or embeddings may be stale, run:
+
+```bash
+${QMD_CLI:-qmd} embed
+```
+
+Verify the collection with either:
+
+```bash
+${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
+```
+
+or, when a specific page path is known:
+
+```bash
+${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
+```
+
+Record one of:
+- `QMD refreshed: update + embed + verified`
+- `QMD refreshed: update only + verified`
+- `QMD skipped: QMD_WIKI_COLLECTION unset`
+- `QMD skipped: qmd CLI unavailable`
+- `QMD failed: <short error summary>`

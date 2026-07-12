@@ -16,7 +16,7 @@ This skill can be invoked directly or via the `wiki-history-ingest` router (`/wi
 
 ## Before You Start
 
-1. Read `.env` to get `OBSIDIAN_VAULT_PATH` and `CODEX_HISTORY_PATH` (default to `~/.codex` if unset)
+1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH` and `CODEX_HISTORY_PATH` (defaults to `~/.codex`)
 2. Read `.manifest.json` at the vault root to check what has already been ingested
 3. Read `index.md` at the vault root to understand what the wiki already contains
 
@@ -152,6 +152,13 @@ For each impacted project, create/update `projects/<name>/<name>.md` (project na
 - Distill knowledge, not chronology
 - Avoid "on date X we discussed..." unless date context is essential
 - Add `summary:` frontmatter on each new/updated page (1-2 sentences, <= 200 chars)
+- Add confidence and lifecycle fields to every new page:
+  ```yaml
+  base_confidence: 0.42
+  lifecycle: draft
+  lifecycle_changed: <ISO date today>
+  ```
+  Leave `lifecycle` unchanged on update.
 - Add provenance markers:
   - `^[extracted]` when directly grounded in explicit session content
   - `^[inferred]` when synthesizing patterns across events/sessions
@@ -191,6 +198,8 @@ Update `index.md` and `log.md`:
 - [TIMESTAMP] CODEX_HISTORY_INGEST sessions=N pages_updated=X pages_created=Y mode=append|full
 ```
 
+**`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary — e.g. "Ingested 12 Codex sessions; surfaced recurring patterns in CLI tooling and shell scripting." Keep the last 3 operations. Update `updated` timestamp.
+
 ## Privacy and Compliance
 
 - Distill and synthesize; avoid raw transcript dumps
@@ -201,3 +210,38 @@ Update `index.md` and `log.md`:
 ## Reference
 
 See `references/codex-data-format.md` for field-level parsing notes and extraction guidance.
+
+## QMD Refresh After Vault Writes
+
+QMD is a search index, not the source of truth. If `$QMD_WIKI_COLLECTION` is empty or unset, skip this step. Run it only after this skill has written or rewritten vault markdown. If QMD refresh fails, do not roll back the vault changes; report the QMD status separately.
+
+Use `$QMD_CLI` if set; otherwise use `qmd`.
+
+```bash
+${QMD_CLI:-qmd} update
+```
+
+If the output says vectors are needed or embeddings may be stale, run:
+
+```bash
+${QMD_CLI:-qmd} embed
+```
+
+Verify the collection with either:
+
+```bash
+${QMD_CLI:-qmd} ls "$QMD_WIKI_COLLECTION"
+```
+
+or, when a specific page path is known:
+
+```bash
+${QMD_CLI:-qmd} get "qmd://$QMD_WIKI_COLLECTION/<page>.md" -l 5
+```
+
+Record one of:
+- `QMD refreshed: update + embed + verified`
+- `QMD refreshed: update only + verified`
+- `QMD skipped: QMD_WIKI_COLLECTION unset`
+- `QMD skipped: qmd CLI unavailable`
+- `QMD failed: <short error summary>`
