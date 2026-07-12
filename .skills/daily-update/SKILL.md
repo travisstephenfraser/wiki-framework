@@ -38,7 +38,7 @@ Compare each source in `.manifest.json` against its file's modification time. Cl
 
 **Step 2: Index refresh**
 
-Read `$OBSIDIAN_VAULT_PATH/index.md`. If any pages in the vault are missing from the index (or vice versa), update the index. Use `find $OBSIDIAN_VAULT_PATH -name "*.md" -not -path "*/_*"` to enumerate vault pages, then reconcile against the index.
+Read `$OBSIDIAN_VAULT_PATH/index.md`. If any pages in the vault are missing from the index (or vice versa), update the index. Use `find $OBSIDIAN_VAULT_PATH -name "*.md" -not -path "*/_*"` to enumerate vault pages, then reconcile against the index. **Project-hub exemption:** pages wikilinked from their project hub (`projects/<name>/<name>.md`) count as indexed — project-scoped pages deliberately stay off the root index. Do not bulk-add them.
 
 **Step 3: hot.md update**
 

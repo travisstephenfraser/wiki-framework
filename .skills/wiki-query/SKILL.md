@@ -73,9 +73,11 @@ Output fields:
 - **`god_nodes_relevant`**: hub pages related to your query terms — always useful context
 - **`index_only`**: if `true`, the top candidate's summary already answers the question — skip page reads
 
+**Visibility guard (filtered mode):** the graph index has **no visibility awareness** — `graph-query` candidates, summaries, and paths may include `visibility/internal` and `visibility/pii` pages. If the query is in filtered mode (see Visibility Filter above), before using ANY Step 0 output — including the `index_only` shortcut — grep the `tags:` frontmatter of each candidate/path page and drop every page carrying a blocked tag. A summary is page content; answering from `candidates[0].summary` without this check leaks filtered pages. If dropping blocked pages empties the candidate set, fall through to Step 1 rather than answering from the index.
+
 **Decision tree:**
 
-1. If `index_only: true` → answer directly from `candidates[0].summary`. Skip Steps 1–4, go to Step 5.
+1. If `index_only: true` → answer directly from `candidates[0].summary` (after the visibility guard in filtered mode). Skip Steps 1–4, go to Step 5.
 2. If `answer_type == "path"` and `path` is non-empty → the connection is in `path`. Read only those pages.
 3. Otherwise → open only `should_read` pages (not all candidates). This replaces the speculative 5–10 page reads the old flow required.
 

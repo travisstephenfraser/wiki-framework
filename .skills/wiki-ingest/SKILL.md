@@ -56,7 +56,7 @@ Output: `{"new": [...], "modified": [...], "unchanged": [...], "missing": [...]}
 - `new` → ingest these
 - `modified` → re-ingest these (content changed since last run)
 - `unchanged` → skip entirely — hash matches, content is identical
-- `missing` → in manifest but no longer on disk; skip and optionally clean up
+- `missing` → in manifest but no longer on disk; skip. **Never delete these manifest entries** — they are ingestion history (which pages a source produced) and legacy-keyed entries (`~/...`, `session/...`, directory keys) resolve as "missing" even though they were validly ingested. Deleting them severs page provenance and invites re-ingestion churn.
 
 After ingesting each source, record its hash:
 

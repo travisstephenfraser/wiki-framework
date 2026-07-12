@@ -104,6 +104,7 @@ Verify `index.md` matches the actual page inventory.
 **How to check:**
 - Compare pages listed in `index.md` to actual files on disk
 - Check that summaries in `index.md` still match page content
+- **Project-hub exemption:** a page is considered indexed if it appears in `index.md` OR is wikilinked from its project hub page (`projects/<name>/<name>.md`). Project-scoped pages deliberately stay off the root index and live on their hub — do not flag them as missing, and never "fix" by bulk-adding hub-listed pages to `index.md`. Only flag pages reachable from neither the index nor any hub.
 
 ### 7. Provenance Drift
 
@@ -118,6 +119,7 @@ Check whether pages are being honest about how much of their content is inferred
   - **Hub pages** (top 10 by incoming wikilink count) with INFERRED > 20%: flag as "high-traffic page with questionable provenance" — errors on hub pages propagate to every page that links to them
   - **Drift**: if the page has a `provenance:` frontmatter block, flag it when any field is more than 0.20 off from the recomputed value
 - **Skip** pages with no `provenance:` frontmatter and no markers — treated as fully extracted by convention
+- **YAML-provenance exemption**: pages that have a `provenance:` frontmatter block but **zero inline markers** in the body (common for `synthesis/` and `concepts/` pages, where provenance was declared at write time rather than marked per-sentence) are exempt from the drift recompute. Recomputing from a marker-free body always yields "100% extracted" and would mis-flag the honest declared values — and the drift "fix" would then overwrite them. Only run the drift check when inline markers exist to recompute from.
 
 **How to fix:**
 - For ambiguous-heavy: re-ingest from sources, resolve the uncertain claims, or split speculative content into a `synthesis/` page
