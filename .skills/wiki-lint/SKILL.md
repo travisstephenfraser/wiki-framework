@@ -120,6 +120,8 @@ Check whether pages are being honest about how much of their content is inferred
   - **Drift**: if the page has a `provenance:` frontmatter block, flag it when any field is more than 0.20 off from the recomputed value
 - **Skip** pages with no `provenance:` frontmatter and no markers — treated as fully extracted by convention
 - **YAML-provenance exemption**: pages that have a `provenance:` frontmatter block but **zero inline markers** in the body (common for `synthesis/` and `concepts/` pages, where provenance was declared at write time rather than marked per-sentence) are exempt from the drift recompute. Recomputing from a marker-free body always yields "100% extracted" and would mis-flag the honest declared values — and the drift "fix" would then overwrite them. Only run the drift check when inline markers exist to recompute from.
+- **Marker grammar**: match markers by prefix, not exact literal — `^[inferred` covers `^[inferred]` and long-form variants like `^[inferred from X]`; `^[ambiguous` likewise. Explicit extracted marks (`^[extracted]`, `^[stated directly]`) count as marked-extracted claims, not as unmarked.
+- **Density gate**: run the drift recompute only on pages with **≥10 inline markers**. Below that, sparse per-sentence marking cannot estimate the page's true fractions — an honest holistic declaration (e.g. extracted=0.6) recomputes as "mostly extracted" simply because most claims are unmarked, mass-flagging pages that aren't drifting. For sparsely-marked pages, treat the declared `provenance:` block as authoritative. Free-text (non-numeric) `provenance:` values have nothing to drift against — skip them.
 
 **How to fix:**
 - For ambiguous-heavy: re-ingest from sources, resolve the uncertain claims, or split speculative content into a `synthesis/` page
@@ -150,12 +152,12 @@ Checks that `visibility/` tags are applied correctly and aren't silently missing
 
 - **Untagged PII patterns:** Grep page bodies for patterns that commonly indicate sensitive data — lines containing `password`, `api_key`, `secret`, `token`, `ssn`, `email:`, `phone:` followed by an actual value (not a field description). If a page matches and lacks `visibility/pii` or `visibility/internal`, flag it as a likely mis-classification.
 - **`visibility/pii` without `sources:`:** A page tagged `visibility/pii` should always have a `sources:` frontmatter field — if there's no provenance, there's no way to verify the classification. Flag any `visibility/pii` page missing `sources:`.
-- **Visibility tags in taxonomy:** `visibility/` tags are system tags and must **not** appear in `_meta/taxonomy.md`. If found there, flag as misconfigured — they'd be counted toward the 5-tag limit on pages that include them.
+- **Visibility tags in taxonomy:** `visibility/` tags are system tags. A dedicated reserved/system section in `_meta/taxonomy.md` that *documents* them (and states they don't count toward the tag limit) is the sanctioned layout — do not flag it. Flag only when `visibility/` tags are listed among the countable domain/project/descriptor tags, where they'd be miscounted toward the 5-tag limit.
 
 **How to fix:**
 - For untagged PII patterns: add `visibility/pii` (or `visibility/internal` if it's team-context rather than personal data) to the page's frontmatter tags
 - For missing `sources:`: add provenance or escalate to the user — don't auto-fill
-- For taxonomy contamination: remove the `visibility/` entries from `_meta/taxonomy.md`
+- For taxonomy contamination: move the `visibility/` entries out of the countable tag tables into a reserved/system section of `_meta/taxonomy.md`
 
 ### 10. Misc Promotion Candidates
 
@@ -169,6 +171,24 @@ Find pages in `misc/` that have accumulated enough project affinity to be promot
 **How to fix:**
 - Run the `cross-linker` skill first if affinity scores look stale (e.g., `affinity: {}` on a page with many wikilinks)
 - To promote: move the page to `projects/<project-name>/references/` (or another appropriate category), update its `category` frontmatter, remove `promotion_status`, and grep the vault for backlinks to update them
+
+### 11. Synthesis Gaps
+
+Identify high-value synthesis opportunities the wiki is missing — concept pairs that co-occur across many pages but have no `synthesis/` page connecting them.
+
+**How to check:**
+- List all pages in `synthesis/` — collect the concept pairs each one already covers (from its `[[wikilinks]]` or title)
+- Pick 10-15 frequently linked concepts from `concepts/` and `entities/`
+- For each pair, run a quick grep to count pages that link to both:
+  ```bash
+  grep -rl "\[\[ConceptA\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/a.txt
+  grep -rl "\[\[ConceptB\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/b.txt
+  comm -12 <(sort /tmp/a.txt) <(sort /tmp/b.txt) | wc -l
+  ```
+- Flag pairs with co-occurrence ≥ 3 that have no existing synthesis page
+
+**How to fix:**
+- Run `/wiki-synthesize` to automatically discover and fill the top gaps
 
 ### 12. Confidence and Lifecycle Schema
 
@@ -224,6 +244,8 @@ Staleness is never stored — it is computed at read time: `is_stale = (today �
 | Phase 2: New pages enforced | +2 weeks | Error for newly created pages missing the fields; existing pages still warn even if `updated` is bumped during routine maintenance |
 | Phase 3: Full enforcement | +6 weeks, gated on a backfill script shipping in a separate PR | Error for all pages |
 
+**Phase determination:** treat **Phase 1 as in effect** unless `WIKI_SCHEMA_PHASE` is set to `2` or `3` in the resolved config. The date anchors above refer to the framework repo's release history, which a lint run should never have to consult.
+
 #### Output additions
 
 Add to the Wiki Health Report:
@@ -276,24 +298,6 @@ Append to the `LINT` log entry:
 ```
 ... relationship_issues=N
 ```
-
-### 11. Synthesis Gaps
-
-Identify high-value synthesis opportunities the wiki is missing — concept pairs that co-occur across many pages but have no `synthesis/` page connecting them.
-
-**How to check:**
-- List all pages in `synthesis/` — collect the concept pairs each one already covers (from its `[[wikilinks]]` or title)
-- Pick 10-15 frequently linked concepts from `concepts/` and `entities/`
-- For each pair, run a quick grep to count pages that link to both:
-  ```bash
-  grep -rl "\[\[ConceptA\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/a.txt
-  grep -rl "\[\[ConceptB\]\]" "$OBSIDIAN_VAULT_PATH" --include="*.md" > /tmp/b.txt
-  comm -12 <(sort /tmp/a.txt) <(sort /tmp/b.txt) | wc -l
-  ```
-- Flag pairs with co-occurrence ≥ 3 that have no existing synthesis page
-
-**How to fix:**
-- Run `/wiki-synthesize` to automatically discover and fill the top gaps
 
 ## Output Format
 
@@ -378,7 +382,7 @@ Triggered by `wiki-lint --consolidate`. Switches from report-only to **act-and-r
 
 **Always run in dry-run first.** Before writing anything:
 
-1. Run all 12 lint checks (Step 1–12 above).
+1. Run all lint checks (1–13 above, including 3a).
 2. Print the planned consolidation actions as a structured list (see Dry-Run Output below).
 3. Ask the user: `"Apply these N changes? [yes / no / select]"`.
 4. Only proceed with writes after explicit confirmation. If the user selects individual actions, apply only those.
