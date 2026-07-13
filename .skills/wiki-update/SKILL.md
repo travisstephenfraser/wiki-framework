@@ -180,7 +180,7 @@ Add or update this project's entry:
 
 ### Update `index.md`
 
-Add entries for any new pages created.
+Add entries for any new pages created — except project-scoped pages, which are linked from their project hub instead of the root index (Page Creation Discipline).
 
 ### Update `log.md`
 

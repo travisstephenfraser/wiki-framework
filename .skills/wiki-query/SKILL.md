@@ -100,7 +100,7 @@ Also decide the **mode**:
 
 Build a candidate set *without opening any page bodies*:
 
-- You've already read `index.md` above — use it as the first filter. It lists every page with a one-line description and tags.
+- You've already read `index.md` above — use it as the first filter. It lists every global page with a one-line description and tags; project-scoped pages live on their project hubs (projects/<name>/<name>.md), so when a query touches a project, also scan that hub's link list.
 - Use `Grep` to scan page **frontmatter only** for title, tag, alias, and summary matches. A pattern like `^(title|tags|aliases|summary):` scoped to vault `.md` files is far cheaper than content grep.
 - Collect the top 5–10 candidate page paths ranked by:
   1. Exact title or alias match

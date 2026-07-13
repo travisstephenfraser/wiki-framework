@@ -70,7 +70,7 @@ impl-validator check:
     - Does .last_update contain a recent Unix timestamp (within the last 60 seconds)?
     - Does .pending_delta contain a non-negative integer?
     - Does hot.md have an updated: frontmatter field set to today?
-    - Does index.md list at least as many pages as exist in the vault?
+    - Is every vault page either listed in index.md or wikilinked from its project hub (projects/<name>/<name>.md)? Project-scoped pages deliberately stay off the root index — never bulk-add them.
 ```
 
 Apply any FAILs before logging.

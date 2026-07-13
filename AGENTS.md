@@ -26,7 +26,7 @@ You can maintain multiple vaults (each a `~/.obsidian-wiki/config.<name>` file m
 
 ```
 $OBSIDIAN_VAULT_PATH/
-├── index.md                # Master index — every page listed, always kept current
+├── index.md                # Master index — every page listed here or reachable from its project hub; project-scoped pages live on hub pages
 ├── log.md                  # Chronological activity log (ingests, updates, lints)
 ├── hot.md                  # Session hot cache — ~500-word semantic snapshot of recent activity
 ├── .manifest.json          # Tracks every ingested source: path, timestamps, pages produced

@@ -192,7 +192,7 @@ Identify high-value synthesis opportunities the wiki is missing — concept pair
 
 ### 12. Confidence and Lifecycle Schema
 
-Enforces the confidence + lifecycle frontmatter schema (see `llm-wiki/SKILL.md`, Confidence and Lifecycle section).
+Enforces the confidence + lifecycle frontmatter schema (see `llm-wiki/SKILL.md`, Confidence and Lifecycle section). **Opt-out:** if `WIKI_SCHEMA_PHASE=0` in the resolved config, skip Check 12 entirely (all rules, all output) — the vault has opted out of the confidence/lifecycle schema.
 
 Two modes:
 - **`--check`** (default, read-only) — reports errors and warnings
@@ -341,7 +341,7 @@ Report findings as a structured list:
 ### Visibility Issues (N found)
 - `entities/user-records.md` — contains `email:` value pattern but no `visibility/pii` tag
 - `concepts/auth-flow.md` — tagged `visibility/pii` but missing `sources:` frontmatter
-- `_meta/taxonomy.md` — contains `visibility/internal` entry (system tag must not be in taxonomy)
+- `_meta/taxonomy.md` — `visibility/` tag listed inside a countable domain-tag table (belongs in the Reserved section)
 
 ### Misc Promotion Candidates (N found)
 Pages in misc/ that have ≥ 3 connections to a single project and are ready to be promoted:
