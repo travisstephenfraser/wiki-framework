@@ -273,7 +273,7 @@ For each project with content, create or update the project overview page at `pr
 
 **Add confidence and lifecycle fields** to every new page's frontmatter:
 ```yaml
-base_confidence: 0.42
+base_confidence: 0.42   # base_confidence/lifecycle/lifecycle_changed: only when WIKI_SCHEMA_PHASE >= 1; omit all three when 0 (schema opt-out)
 lifecycle: draft
 lifecycle_changed: <ISO date today>
 ```

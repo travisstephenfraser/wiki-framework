@@ -103,6 +103,8 @@ lifecycle_changed: <ISO date today>
 ---
 ```
 
+**Schema gate:** include the `base_confidence` / `lifecycle` / `lifecycle_changed` lines only when `WIKI_SCHEMA_PHASE` >= 1 in the resolved config. When it is `0`, omit them - the vault has opted out of the trust schema (see wiki-lint Check 12 Opt-out).
+
 Body: title, URL, what it covers, key claims (with provenance markers), limitations.
 
 ### 2. concepts/ — One page per substantive concept
@@ -138,7 +140,7 @@ provenance:
   ambiguous: 0.X
 base_confidence: <min(N_unique_sources/3,1.0)×0.5 + avg_source_quality×0.5>
 lifecycle: draft
-lifecycle_changed: <ISO date today>
+lifecycle_changed: <ISO date today>   <!-- base_confidence/lifecycle lines: only when WIKI_SCHEMA_PHASE >= 1; omit when 0 -->
 ---
 
 # Research: <Topic>

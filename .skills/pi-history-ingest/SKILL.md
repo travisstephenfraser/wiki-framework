@@ -195,7 +195,7 @@ For each impacted project, create/update `projects/<name>/<name>.md`.
 - Add `summary:` frontmatter on each new/updated page (1–2 sentences, ≤ 200 chars)
 - Add confidence and lifecycle fields to every new page:
   ```yaml
-  base_confidence: 0.42
+  base_confidence: 0.42   # base_confidence/lifecycle/lifecycle_changed: only when WIKI_SCHEMA_PHASE >= 1; omit all three when 0 (schema opt-out)
   lifecycle: draft
   lifecycle_changed: <ISO date today>
   ```
