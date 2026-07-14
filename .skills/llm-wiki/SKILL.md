@@ -331,7 +331,7 @@ provenance:
   ambiguous: 0.03
 ```
 
-These are best-effort numbers written by the ingest skill at create/update time. `wiki-lint` recomputes them and flags drift. The block is optional — pages without it are treated as fully extracted by convention.
+These are best-effort numbers written by the ingest skill at create/update time. `wiki-lint` recomputes them and flags drift **only on densely marked pages** (≥10 inline markers; pages with a `provenance:` block but no inline markers are exempt — see wiki-lint Check 7). The block is optional — pages without it are treated as fully extracted by convention.
 
 ## Typed Relationships
 
@@ -381,7 +381,7 @@ Every page carries two orthogonal trust signals plus an optional supersession li
 ### Required fields
 
 ```yaml
-base_confidence: 0.65          # [0.0, 1.0] — time-independent quality estimate. Stored once, recomputed on content change.
+base_confidence: 0.65          # [0.0, 1.0] — time-independent quality estimate. Stored once; a material content change marks the page's ledger review stale, prompting re-review (never silent recompute).
 lifecycle: draft               # draft | reviewed | verified | disputed | archived
 lifecycle_changed: 2024-03-15  # ISO date of last state transition
 # lifecycle_reason: "..."      # optional free-text — why the state changed; surfaced by wiki-query
@@ -471,8 +471,8 @@ The `tier:` field controls which pages get updated on each ingest pass and their
 ### Assignment rules
 
 - **New pages:** default to `tier: supporting`
-- **Promote to `core`:** when a page accumulates ≥5 incoming wikilinks **or** is flagged as a bridge by `wiki-status` insights mode
-- **Demote to `peripheral`:** when a page has ≤1 incoming link and hasn't been updated in 90+ days
+- **Promote to `core`:** when the page is among the vault's true hubs — top ~10–15% by incoming content-page links — **or** is flagged as a bridge by `wiki-status` insights mode. A fixed link-count cutoff degenerates in dense vaults; bulk derivations must log a `TIER_DERIVE` entry and use a threshold selecting ≤25% of pages
+- **Demote to `peripheral`:** human-only. Tools may *propose* demotion (≤1 incoming link and 90+ days unchanged is the signal) but never write it — `wiki-query` skips peripheral pages, so an automated demotion silently removes a page from retrieval
 - **Human override always wins** — edit `tier:` manually to lock a page at any level
 - Existing pages without `tier:` are treated as `supporting` (backward compatible — no migration needed)
 
@@ -481,7 +481,7 @@ The `tier:` field controls which pages get updated on each ingest pass and their
 - `wiki-ingest` reads `tier:` to decide whether to update a page on the current pass
 - `wiki-query` uses `tier:` to order candidates in the index pass and trim to context budget
 - `wiki-status` insights mode computes graph metrics and **suggests** tier assignments — it never writes them automatically
-- `wiki-lint` flags missing `tier:` on newly created pages (Phase 2 enforcement, same timeline as `base_confidence`)
+- `wiki-lint` flags missing `tier:` on newly created pages when the schema is enforced (`WIKI_SCHEMA_PHASE` ≥ 1; see wiki-lint Check 12)
 
 ## Retrieval Primitives
 

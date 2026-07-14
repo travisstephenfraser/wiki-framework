@@ -461,16 +461,15 @@ For each orphan page found in Check 1 (zero incoming links):
 #### Action 3: Correct lifecycle states
 
 Apply these rules automatically (they don't require human judgment — they enforce the documented state machine):
-- **Promote `draft` → `reviewed`:** pages where `lifecycle: draft` AND `created` > 30 days ago AND `base_confidence > 0.7`. Set `lifecycle: reviewed`, `lifecycle_changed: <today>`, `lifecycle_reason: "auto-promoted by wiki-lint --consolidate: age>30d, confidence>0.7"`.
+- **Promote `draft` → `reviewed`:** ONLY for pages that have an **approved, non-stale entry in `_meta/trust-ledger.json`** (a recorded human review is what `reviewed` means) AND `lifecycle: draft` AND `created` > 30 days ago. Set `lifecycle: reviewed`, `lifecycle_changed: <today>`, `lifecycle_reason: "auto-promoted by wiki-lint --consolidate: ledger-approved review, age>30d"`. Never promote from `base_confidence` alone — a stored score is a draft estimate, not evidence a review happened.
 - **Demote `verified` → `stale`:** NOT a state transition — `stale` is a computed overlay, not a lifecycle value. Instead: for verified pages where `is_stale = (today − updated) > 180 days`, add a callout at the top of the page body: `> ⚠️ **Stale**: This page was last updated <date>. Verify before relying on it.` Only add if the callout isn't already present.
 - **Do not change `reviewed` → `verified` or any other transition** — those are human-only.
 
 #### Action 4: Tier demotion
 
 For pages with `tier: supporting` (or unset) that have 0 incoming links AND haven't been updated in 90+ days:
-- Set `tier: peripheral`.
-- Emit a list of demotions for the user to review.
-- Do not demote `tier: core` pages automatically — those were manually set.
+- Emit a list of **proposed** demotions for the user to review. Do NOT write `tier: peripheral` automatically — wiki-query skips peripheral pages at retrieval time, so an automatic demotion silently removes pages from search; demotion is human-only.
+- Do not demote `tier: core` pages automatically — those were manually set. Exception: when the vault log's most recent `TIER_DERIVE` entry shows tiers came from a bulk derivation, they may be re-derived with the same logged procedure and threshold.
 
 #### Action 5: Tag normalization
 

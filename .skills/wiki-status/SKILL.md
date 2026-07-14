@@ -346,7 +346,7 @@ You'll reuse this data across all sections below.
    - If no previous snapshot exists, skip this section
 
 8. **Tier assignment suggestions.** After computing hubs and bridges, recommend `tier:` changes. Never write `tier:` to pages — only surface suggestions so the human can decide.
-   - **Promote to `core`:** pages with ≥5 incoming links OR top-5 bridge position that currently have `tier: supporting` or no `tier:` field
+   - **Promote to `core`:** pages among the vault's true hubs (top ~10-15% by incoming content-page links, matching the most recent `TIER_DERIVE` threshold if one is logged) OR top-5 bridge position, that currently have `tier: supporting` or no `tier:` field
    - **Demote to `peripheral`:** pages with ≤1 incoming link AND not updated in 90+ days that currently have `tier: supporting` or `tier: core`
    - Show up to 10 suggestions (promotions first, then demotions), formatted as:
      ```

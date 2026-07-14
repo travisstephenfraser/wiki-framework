@@ -171,7 +171,7 @@ Read both pages. Update the canonical page:
 - **`tags:`** — merge both tag lists (deduplicate, cap at 5 domain tags + system tags)
 - **`sources:`** — merge both source lists (deduplicate)
 - **`relationships:`** — merge both relationship lists (deduplicate by target, prefer typed entries over untyped)
-- **`base_confidence`** — recompute using the union of sources and the formula from `llm-wiki/SKILL.md`
+- **`base_confidence`** — recompute using the union of sources and the formula from `llm-wiki/SKILL.md` as a draft estimate (only when `WIKI_SCHEMA_PHASE` >= 1; omit when `0`). A merge is a material change under the trust-ledger protocol: the canonical page's approved review goes stale and must be re-approved via `trust-record` - expected, not an error
 - **`updated`** — set to now
 - **`summary:`** — rewrite to cover the merged scope if the secondary page added new ground
 - **Body content** — merge unique sections and bullets from the secondary page. Do not blindly append — integrate the content. Avoid duplicating claims already present in the canonical page. Use `^[inferred]` markers where synthesis is needed.

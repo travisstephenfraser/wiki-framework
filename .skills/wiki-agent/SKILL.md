@@ -187,8 +187,8 @@ For each extracted blob, determine where it belongs in the wiki:
    sources: [<agent>://<path/to/session>]
    created: <date>
    updated: <date>
-   confidence: high|medium|low
-   lifecycle: stable|draft
+   base_confidence: <0.0-1.0 per llm-wiki formula>   # only when WIKI_SCHEMA_PHASE >= 1; omit when 0
+   lifecycle: draft   # enum: draft|reviewed|verified|disputed|archived; only when WIKI_SCHEMA_PHASE >= 1
    ---
    ```
    Set `sources` with the agent prefix so `memory-bridge` can find it later.
