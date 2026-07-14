@@ -798,3 +798,26 @@ def test_partial_trust_record_reports_malformed_ledger_without_traceback(tmp_pat
     assert "error: cannot update trust ledger" in record.stderr
     assert "Traceback" not in record.stderr
     assert ledger_path.read_text() == "[]\n"
+
+
+def test_meta_and_generated_skills_dirs_are_excluded_from_trust_scope(tmp_path: Path) -> None:
+    vault = tmp_path
+    _page(vault, "concepts/real-page.md")
+    meta = vault / "_meta" / "taxonomy.md"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("# Tag Taxonomy\nno frontmatter at all\n", encoding="utf-8")
+    generated = vault / "_generated-skills" / "some-skill" / "SKILL.md"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("---\nname: some-skill\n---\n# Skill\n", encoding="utf-8")
+
+    ledger = build_trust_ledger(vault, reviewed_at="2026-07-14T12:00:00-07:00")
+    recorded = set(ledger["pages"])
+    assert "concepts/real-page.md" in recorded
+    assert not any(p.startswith(("_meta/", "_generated-skills/")) for p in recorded)
+
+    write_trust_ledger(vault / "_meta" / "trust-ledger.json", ledger, vault=vault)
+    report = check_trust_ledger(vault)
+    assert not any(
+        str(e).startswith(("_meta/", "_generated-skills/")) or "_generated-skills" in str(e)
+        for e in report["errors"]
+    )

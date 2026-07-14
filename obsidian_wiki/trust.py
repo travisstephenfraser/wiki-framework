@@ -24,10 +24,12 @@ TRUST_LEDGER_RELATIVE_PATH = Path("_meta/trust-ledger.json")
 TRUST_LEDGER_SCHEMA_VERSION = 1
 TRUST_REVIEW_METHOD = "manual-lineage-and-claim-coverage-v1"
 TRUST_SKIP_DIRS = frozenset(
-    "_raw _archived _staging _archives _bootstrap .obsidian .git".split()
+    "_raw _archived _staging _archives _bootstrap _meta _generated-skills .obsidian .git".split()
 )
 TRUST_RESERVED_STEMS = frozenset({"index", "log", "hot", "_insights"})
-ALLOWED_LIFECYCLES = frozenset({"draft", "reviewed", "verified", "disputed", "archived"})
+ALLOWED_LIFECYCLES = frozenset(
+    {"draft", "reviewed", "verified", "disputed", "archived"}
+)
 _REQUIRED_TRUST_KEYS = ("base_confidence", "lifecycle", "updated")
 _VOLATILE_CONFIDENCE_KEYS = (
     "updated",
@@ -52,7 +54,9 @@ def _validate_reviewed_at(value: Any) -> str:
     try:
         parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ValueError("reviewed_at must be an ISO-8601 timestamp with timezone") from exc
+        raise ValueError(
+            "reviewed_at must be an ISO-8601 timestamp with timezone"
+        ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("reviewed_at must be an ISO-8601 timestamp with timezone")
     return candidate
@@ -233,7 +237,9 @@ def _validate_ledger_entry(entry: Any) -> tuple[str, float, str]:
         or re.fullmatch(r"sha256:[0-9a-f]{64}", fingerprint) is None
     ):
         raise ValueError("invalid_ledger_entry")
-    if not isinstance(reviewed_confidence, (int, float)) or isinstance(reviewed_confidence, bool):
+    if not isinstance(reviewed_confidence, (int, float)) or isinstance(
+        reviewed_confidence, bool
+    ):
         raise ValueError("invalid_ledger_entry")
     reviewed_value = float(reviewed_confidence)
     if not math.isfinite(reviewed_value) or not 0.0 <= reviewed_value <= 1.0:
@@ -273,10 +279,17 @@ def update_trust_ledger(
         except (OSError, UnicodeError, ValueError) as exc:
             raise RuntimeError(f"cannot update unreadable trust ledger: {exc}") from exc
         if not isinstance(ledger, dict):
-            raise RuntimeError("cannot update trust ledger: top level must be an object")
-        if type(ledger.get("schema_version")) is not int or ledger.get("schema_version") != TRUST_LEDGER_SCHEMA_VERSION:
+            raise RuntimeError(
+                "cannot update trust ledger: top level must be an object"
+            )
+        if (
+            type(ledger.get("schema_version")) is not int
+            or ledger.get("schema_version") != TRUST_LEDGER_SCHEMA_VERSION
+        ):
             raise RuntimeError("cannot update unsupported trust ledger schema")
-        if ledger.get("method") != TRUST_REVIEW_METHOD or not isinstance(ledger.get("pages"), dict):
+        if ledger.get("method") != TRUST_REVIEW_METHOD or not isinstance(
+            ledger.get("pages"), dict
+        ):
             raise RuntimeError("cannot update malformed trust ledger")
         try:
             _validate_reviewed_at(ledger.get("reviewed_at"))
@@ -293,7 +306,9 @@ def update_trust_ledger(
             "pages": {},
         }
 
-    current = {path.relative_to(vault).as_posix(): path for path in iter_trust_pages(vault)}
+    current = {
+        path.relative_to(vault).as_posix(): path for path in iter_trust_pages(vault)
+    }
     selected: list[str] = []
     for raw in page_paths:
         candidate = Path(raw)
@@ -302,7 +317,9 @@ def update_trust_ledger(
         rel = candidate.as_posix().removeprefix("./")
         page = current.get(rel)
         if page is None:
-            raise RuntimeError(f"trust page is missing or lacks the trust schema: {raw}")
+            raise RuntimeError(
+                f"trust page is missing or lacks the trust schema: {raw}"
+            )
         if rel not in selected:
             selected.append(rel)
             ledger["pages"][rel] = _review_entry(page, reviewed_at)
@@ -321,7 +338,9 @@ def write_trust_ledger(
     expected = vault_root / TRUST_LEDGER_RELATIVE_PATH
     requested = path.expanduser().absolute()
     if requested.resolve(strict=False) != expected:
-        raise RuntimeError("trust ledger destination resolves outside the resolved vault")
+        raise RuntimeError(
+            "trust ledger destination resolves outside the resolved vault"
+        )
 
     parent = expected.parent
     if parent.exists() and parent.is_symlink():
@@ -338,11 +357,15 @@ def write_trust_ledger(
         raise RuntimeError(f"trust ledger is not valid JSON data: {exc}") from exc
 
     if os.name == "posix":
-        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        directory_flags = (
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        )
         try:
             directory_fd = os.open(parent, directory_flags)
         except OSError as exc:
-            raise RuntimeError(f"cannot securely open trust ledger directory: {exc}") from exc
+            raise RuntimeError(
+                f"cannot securely open trust ledger directory: {exc}"
+            ) from exc
         temporary_name = f".trust-ledger-{secrets.token_hex(16)}.tmp"
         temporary_created = False
         try:
@@ -359,10 +382,7 @@ def write_trust_ledger(
 
             descriptor = os.open(
                 temporary_name,
-                os.O_WRONLY
-                | os.O_CREAT
-                | os.O_EXCL
-                | getattr(os, "O_NOFOLLOW", 0),
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
                 dir_fd=directory_fd,
             )
@@ -445,7 +465,10 @@ def check_trust_ledger(vault: Path, ledger_path: Path | None = None) -> dict[str
     if not isinstance(ledger, dict):
         report["errors"].append({"issue": "ledger_must_be_an_object"})
         return _finalise_report(report)
-    if type(ledger.get("schema_version")) is not int or ledger.get("schema_version") != TRUST_LEDGER_SCHEMA_VERSION:
+    if (
+        type(ledger.get("schema_version")) is not int
+        or ledger.get("schema_version") != TRUST_LEDGER_SCHEMA_VERSION
+    ):
         report["errors"].append(
             {
                 "issue": "unsupported_schema_version",
@@ -475,9 +498,7 @@ def check_trust_ledger(vault: Path, ledger_path: Path | None = None) -> dict[str
             rel = _validate_ledger_page_path(raw_rel)
             validated_entries[rel] = _validate_ledger_entry(entry)
         except ValueError as exc:
-            report["errors"].append(
-                {"page": raw_rel, "issue": str(exc)}
-            )
+            report["errors"].append({"page": raw_rel, "issue": str(exc)})
     if report["errors"]:
         return _finalise_report(report)
 
@@ -496,7 +517,9 @@ def check_trust_ledger(vault: Path, ledger_path: Path | None = None) -> dict[str
             continue
         fingerprint, reviewed_value, reviewed_at = validated_entries[rel]
         if page_fingerprint(page) != fingerprint:
-            report["stale"].append({"page": rel, "reason": "material_fingerprint_changed"})
+            report["stale"].append(
+                {"page": rel, "reason": "material_fingerprint_changed"}
+            )
             continue
         if abs(stored_confidence - reviewed_value) > 1e-9:
             report["score_mismatches"].append(
@@ -521,7 +544,14 @@ def check_trust_ledger(vault: Path, ledger_path: Path | None = None) -> dict[str
 
 
 def _finalise_report(report: dict[str, Any]) -> dict[str, Any]:
-    keys = ("reviewed", "stale", "unreviewed", "score_mismatches", "missing_pages", "errors")
+    keys = (
+        "reviewed",
+        "stale",
+        "unreviewed",
+        "score_mismatches",
+        "missing_pages",
+        "errors",
+    )
     report["counts"] = {key: len(report[key]) for key in keys}
     if report["errors"] or report["score_mismatches"]:
         report["status"] = "fail"
