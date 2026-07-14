@@ -295,7 +295,7 @@ Missing or malformed trust fields, malformed ledger data, and a missing required
 ledger are hard errors. New pages with valid trust fields but no approved ledger
 entry are `unreviewed`; material changes to approved pages are `stale`.
 
-**Phase determination:** treat **Phase 1 as in effect** unless `WIKI_SCHEMA_PHASE` is set to `2` or `3` in the resolved config. The date anchors above refer to the framework repo's release history, which a lint run should never have to consult.
+**Phase determination (fork-local):** `WIKI_SCHEMA_PHASE` in the resolved config gates enforcement — `0` skips Check 12 entirely (see Opt-out above), `1` downgrades every finding in this check to a warning (transition mode for a vault mid-backfill), `2`/`3`/unset applies the full enforcement described above.
 
 #### Output additions
 

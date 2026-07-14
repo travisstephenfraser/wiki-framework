@@ -415,12 +415,14 @@ lifecycle_changed: "<ISO date today>"
 tier: supporting              # default for new pages; promote to core when ≥5 incoming links
 ```
 
+**Schema gate:** include the `base_confidence` / `lifecycle` / `lifecycle_changed` / `tier` lines only when `WIKI_SCHEMA_PHASE` ≥ 1 in the resolved config. When it is `0`, omit all four — the vault has opted out of the trust schema (see wiki-lint Check 12 Opt-out) and the rest of this subsection does not apply.
+
 Compute `base_confidence` using the formula from `llm-wiki/SKILL.md` (Confidence and Lifecycle section):
 - Count distinct source_ids for this page
 - Classify each source's quality bucket
 - `base_confidence = min(N/3, 1.0) × 0.5 + avg_quality × 0.5`
 
-When **updating** an existing page, recompute `base_confidence` only if sources changed materially (source added or removed). Do not rewrite it on every update — this avoids git churn. Leave `lifecycle` unchanged on update; only the human editor promotes lifecycle state.
+When **updating** an existing page, recompute `base_confidence` only if sources changed materially (source added or removed). Do not rewrite it on every update — this avoids git churn. Leave `lifecycle` unchanged on update; only the human editor promotes lifecycle state. Under the trust-ledger protocol (wiki-lint Check 12), a material source change marks the page's approved review `stale` — that is expected and correct; the new value is a draft estimate until re-approved via `trust-record`.
 
 **Apply a `visibility/` tag** if the content clearly warrants one (optional):
 - `visibility/internal` — architecture internals, system credentials patterns, team-only context
