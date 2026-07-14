@@ -11,7 +11,7 @@ Resolve config using the Config Resolution Protocol in `llm-wiki/SKILL.md`:
 2. **Global config** — if no local `.env` is found, read `~/.obsidian-wiki/config`.
 3. **Prompt setup** — if neither exists, tell the user to run `wiki-setup`.
 
-The resolved config sets `OBSIDIAN_VAULT_PATH` (where the wiki lives). It may also set `OBSIDIAN_WIKI_REPO` (where this repo is cloned) and other optional variables.
+The resolved config sets `OBSIDIAN_VAULT_PATH` (where the wiki lives). It may also set `OBSIDIAN_WIKI_REPO` (where this repo is cloned) and other optional variables — notably `WIKI_SCHEMA_PHASE` (trust schema: `0` opted out — lint Check 12 skipped and write skills omit `base_confidence`/`lifecycle`; `1` transition — warnings + fields emitted; `2`/`3`/unset — full enforcement).
 
 ### Targeting a specific vault
 
@@ -32,6 +32,7 @@ $OBSIDIAN_VAULT_PATH/
 ├── .manifest.json          # Tracks every ingested source: path, timestamps, pages produced
 ├── _meta/
 │   ├── taxonomy.md         # Controlled tag vocabulary
+│   ├── trust-ledger.json   # Approved confidence reviews (trust-record/trust-check; only when the trust schema is on)
 │   └── *.base              # Obsidian Bases dashboard definitions (wiki-dashboard skill)
 ├── _insights.md            # Graph analysis output (hubs, bridges, dead ends)
 ├── _raw/                   # Staging area — drop rough notes here, next ingest promotes them

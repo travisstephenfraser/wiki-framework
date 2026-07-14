@@ -6,7 +6,7 @@
 
 **Goal:** Give every vault page reproducible, auditable `base_confidence` + `lifecycle` trust metadata by adopting upstream's trust-ledger protocol (PR #132) instead of reviving the homegrown §S1 classifier — with all work branch-isolated so a second failure costs `git branch -D`, not a day of surgery.
 
-**Architecture:** Confidence is a *human-approved judgment recorded in a fingerprinted ledger* (`_meta/trust-ledger.json`), validated by executable code (`obsidian_wiki/trust.py`, stdlib-only, 349-line test suite) — never recomputed from source-string heuristics. Agents draft per-page scores with lineage rationale; Travis approves; `trust-record` seals approvals with a SHA-256 fingerprint of material content (volatile fields excluded, so timestamp churn never reopens review). Partial coverage is a supported state: unledgered pages are simply "unreviewed," so the backfill can proceed hub-first without a 186-page big bang.
+**Architecture:** Confidence is a *human-approved judgment recorded in a fingerprinted ledger* (`_meta/trust-ledger.json`), validated by executable code (`obsidian_wiki/trust.py`, stdlib-only, 349-line test suite) — never recomputed from source-string heuristics. Agents draft per-page scores with lineage rationale; Travis approves; `trust-record` seals approvals with a SHA-256 fingerprint of material content (volatile fields excluded, so timestamp churn never reopens review). Partial *approval* is a supported state: schema'd-but-unledgered pages report as "unreviewed," so review can proceed hub-first. (Field backfill itself is atomic — empirically verified: trust-check fail-closes while any content page lacks the schema.)
 
 ## Why v1 is superseded (deep-dive findings, 2026-07-14)
 
@@ -21,13 +21,15 @@
 - Preserve fork-local patches through all cherry-picks: `WIKI_SCHEMA_PHASE` opt-out switch, wiki-query Step 0 visibility guard, manifest-history guard, project-hub index exemption, provenance-drift exemptions (see [[wiki-maintenance-protocol]] "Fork and upstream-merge discipline").
 - Do NOT pull the rest of upstream past `bf48502`: the manifest-schema rename (`cc8768e`), pre-write snapshot auto-commits (`cb9d732`/`9113e17`) are known traps (wiki-maintenance-protocol trap list). Cherry-picks only, enumerated below. Optional rider: `95424e4` (cache relative-key fix, #136) — pure code fix, no trap strings; include only if Travis opts in.
 - Page bodies are IMMUTABLE. Only frontmatter fields `base_confidence`, `lifecycle`, `lifecycle_changed`, `tier` may be added/changed, plus `_meta/trust-ledger.json` and `log.md`/`hot.md` bookkeeping (explicit carve-out — v1 forgot it).
+- **Content scope (normative):** the 7 category dirs (`concepts entities skills references synthesis journal projects`) at the vault root, excluding every `_`-prefixed directory (`_raw _archives _meta _generated-skills` etc.) and the reserved stems `index/log/hot/_insights`. The fork-patched `TRUST_SKIP_DIRS`/`SKIP_DIRS` encode this; ~186 pages at plan time.
+- **Durable artifacts:** the pre-plan snapshot lives at `/Users/travis/Developer/.vault/.vault-backup-pre-v2-2026-07-14.tar` (NOT /tmp). Review tables and scripts live in `VAULT/_meta/schema-v2-worktables/` on the vault branch (committed, survives session loss, excluded from trust scope by the `_meta` skip).
 - Every script dry-runs first, prints a full report, and is idempotent (second `--apply` → 0 changes).
 - `updated:` is NEVER bumped by this plan (the ledger fingerprint excludes it; trust metadata is not a content change).
 - No pip install. All CLI use runs from the repo checkout: `python3 -c "import sys; sys.path.insert(0,'REPO'); from obsidian_wiki…"` or `python3 -m obsidian_wiki` from REPO.
 
 ## Open decisions (Travis, before execution)
 
-- **D1 — Review depth for 186 pages:** (a) per-page approval for core tier (~41) + bulk-by-category approval with 10% spot-checks for the tail, or (b) core tier only in this pass, tail stays unreviewed (supported state). Recommendation: (a).
+- **D1 — Review depth (REVISED post-verification):** the tooling has no partial-schema mode — trust-check hard-fails while any content page lacks `base_confidence`/`lifecycle`, so **field backfill is atomic across all content pages** (T6 Step 1). Only *approval* is stageable: (a) per-page approval for core tier (~41) + bulk-by-category with 10% spot-checks for the tail, or (b) approve core only; tail stays schema'd-but-unreviewed (`warn/unreviewed` — the correct ratchet state). Recommendation: (a).
 - **D2 — Include `95424e4` cache fix rider?** Recommendation: yes (it's the #136 fix, independently verified real).
 - **D3 — Post-backfill enforcement:** flip `WIKI_SCHEMA_PHASE` to enforce trust fields on new pages once the write-template gate (T5) ships, or stay opt-out and run `trust-check` manually via the weekly cadence. Recommendation: flip after one clean week.
 
@@ -67,12 +69,12 @@
 
 ### Task 5: Tier derivation on the vault branch (v1-T8 salvage, verified sound)
 
-- [ ] **Step 1:** `tier_derive.py` (from v1 spec): distinct incoming content-page wikilinks; `core` iff ≥ 10 else `supporting`; never `peripheral`; system files excluded as sources. Dry-run gate: core ≤ 25% (~≤46; expected ≈41).
+- [ ] **Step 1:** `VAULT/_meta/schema-v2-worktables/tier_derive.py` (self-contained spec): for every content-scope page, count **distinct incoming content-page wikilinks** — link sources are content-scope pages only (`index.md`/`log.md`/`hot.md`/`_insights.md` and all `_`-dirs excluded as sources), self-links excluded, targets resolved by filename stem case-insensitively, `[[target|alias]]` and `[[target#anchor]]` count as `target`. Set `tier: core` iff incoming ≥ 10, else `tier: supporting`; NEVER write `peripheral`. Dry-run gate: core count ≤ 25% of content pages (~≤46; expected ≈41 at threshold 10). If > 25%, raise the threshold to 12 and re-gate once; if still > 25%, STOP.
 - [ ] **Step 2:** Apply; append `TIER_DERIVE` entry to `VAULT/log.md`; commit on branch. Idempotency re-run → 0.
 
 ### Task 6: Lifecycle + confidence drafting (agents draft, Travis approves)
 
-- [ ] **Step 1:** Batch-assign `lifecycle: draft` + `lifecycle_changed: <today>` to every content page lacking the field (dry-run count printed first). This is the honest floor — promotions are human-only.
+- [ ] **Step 1 (ATOMIC — all content pages in one apply):** batch-assign `lifecycle: draft` + `lifecycle_changed: <today>` + a draft `base_confidence` (from the Step 2 review tables; pages not yet scored get the agent-drafted value marked draft) to EVERY content page lacking them. Guard: `references/macos-migration.md` already carries both fields — the script must skip existing fields, never double-insert (duplicate keys are a trust-check hard error). Rationale: trust-check fail-closes on any schema-less page, so partial field-backfill leaves the vault permanently red; approval (the ledger) is the stageable part, not the fields. Dry-run count printed first.
 - [ ] **Step 2:** Per D1 scope: agents produce a **review table** per category — page, proposed `base_confidence` (upstream manual formula: lineage count × 0.5 + reviewed quality × 0.5, then claim-coverage judgment), the independent-evidence lineages identified, and a one-line rationale. No vault writes in this step. Output: `SCRATCHPAD/confidence-review-<category>.md`.
 - [ ] **Step 3:** Travis reviews per D1 (per-page for core, bulk+spot-check for tail). Approved rows only proceed. Any page whose evidence doesn't support its claims gets flagged "repair first" and is EXCLUDED (stays unreviewed) — never scored around.
 - [ ] **Step 4:** Propose `lifecycle: reviewed` for the approved set (they were just reviewed — that's what the state means); Travis confirms the list. `verified` is proposed for nothing (needs independent verification beyond this pass).
@@ -80,7 +82,13 @@
 ### Task 7: Apply + seal the ledger
 
 - [ ] **Step 1:** Apply approved `base_confidence`/`lifecycle` values by script (dry-run → apply → idempotency). Bodies untouched; `updated:` untouched. Commit on branch.
-- [ ] **Step 2:** From the repo checkout: `trust-record VAULT --pages <approved list> --reviewed-at <Travis-supplied ISO timestamp>` (partial recording is supported and intended). Then `trust-check VAULT --strict --json` → gate: zero errors on the ledgered set; unledgered pages report as unreviewed (expected, not a failure).
+- [ ] **Step 2:** From the repo checkout (no entry point without pip; module invocation is the supported path):
+```bash
+cd REPO && python3 -m obsidian_wiki trust-record VAULT \
+  --page <path1> --page <path2> ... \
+  --reviewed-at 2026-07-XXTHH:MM:SS-07:00 --approved --json
+```
+`--page` is repeatable (one flag per page), `--approved` is REQUIRED, `--reviewed-at` must be ISO-8601 WITH timezone (date-only and tz-less forms are rejected). Then `python3 -m obsidian_wiki trust-check VAULT --json` → **gate (JSON fields, not exit code):** `score_mismatches == []` AND `stale == []` AND every approved page appears in `reviewed` AND `errors == []` (achievable because T6 Step 1 was atomic). Non-approved pages appearing in `unreviewed` is expected. Do not gate on exit code: `--strict` exits 1 even on warn.
 - [ ] **Step 3:** Commit `_meta/trust-ledger.json` on the vault branch.
 
 ### Task 8: Bookkeeping (vault branch)
@@ -90,10 +98,10 @@
 
 ### Task 9: Acceptance & merge gates
 
-- [ ] **A1 Reproducibility:** `trust-check --strict` green; re-running it after a no-op day stays green (fingerprints stable across timestamp-only churn).
+- [ ] **A1 Fingerprint stability (testable in-window):** copy the vault to a scratch dir, bump only `updated:` on 5 ledgered pages in the copy, re-run `trust-check` there → still `reviewed`, no stale; then edit one body sentence on one page → exactly that page goes `stale`. Proves timestamp-churn immunity and material-change detection in minutes.
 - [ ] **A2 Body integrity:** byte-compare bodies vs the T0 tar snapshot → 0 diffs outside frontmatter.
 - [ ] **A3 Tier sanity:** core ≤ 25%, 0 peripheral, `TIER_DERIVE` logged.
-- [ ] **A4 Test suite:** `test_trust.py` + `test_lint.py` pass on the repo branch.
+- [ ] **A4 Test suite:** `test_trust.py` + `test_lint.py` (incl. the fork's skip-dirs regression test) pass on the repo branch via the approved isolated venv (`/tmp/ow-testenv` pattern — venv-scoped pytest only; never `pip install obsidian-wiki`). Recreate the venv if /tmp was cleared.
 - [ ] **A5 Fork patches:** all five fork-local patches present post-cherry-pick (greps from T1 Step 5).
 - [ ] **A6 Idempotency:** every script's re-run → 0 changes.
 - [ ] **Merge gate:** Travis sign-off → merge `trust-ledger-adoption` → repo main, push; merge `schema-v2-backfill` → vault main, push. On abort at any point: `git branch -D` both, `main` was never touched.
@@ -111,4 +119,4 @@
 | log/hot edits violated body-immutability constraint as written | Explicit carve-out in Global Constraints |
 | `git add -A` sweeping unrelated files | Branches start clean (T0 Step 1 gate); per-task scoped commits |
 | A1 self-verified | T4 requires an independent verifier to run the tooling on a scratch vault copy |
-| Auto-promote Action 3 interaction | Old consolidate Action 3 keys on confidence>0.7 + age; post-adoption, lifecycle promotion is ledger-gated — T2 Step 3 checks consolidate text for coherence |
+| Auto-promote Action 3 interaction | FIXED on branch (post-T4 remediation): Action 3 now promotes only pages with an approved, non-stale ledger entry — never from a stored score; Action 4 no longer writes `peripheral` automatically |
