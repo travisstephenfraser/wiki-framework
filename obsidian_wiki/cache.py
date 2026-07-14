@@ -109,7 +109,11 @@ def check_sources(vault: Path, source_paths: list[Path]) -> CheckResult:
             result["missing"].append(key)
             continue
         current_hash = compute_hash(path)
-        entry = sources.get(key) or sources.get(os.path.abspath(key))
+        entry = (
+            sources.get(key)
+            or sources.get(os.path.abspath(key))
+            or sources.get(os.path.relpath(path, vault))
+        )
         if entry is None:
             result["new"].append(key)
         elif entry.get("content_hash") != current_hash:
@@ -117,10 +121,17 @@ def check_sources(vault: Path, source_paths: list[Path]) -> CheckResult:
         else:
             result["unchanged"].append(key)
 
-    # Report manifest keys that no longer exist on disk (not in source_paths scan)
-    checked = {str(p) for p in source_paths} | {os.path.abspath(p) for p in source_paths}
+    # Report manifest keys that no longer exist on disk (not in source_paths scan).
+    # Manifest keys may be stored absolute or vault-relative, so match each passed
+    # path in all three forms and resolve relative keys against the vault root.
+    checked: set[str] = set()
+    for p in source_paths:
+        checked.add(str(p))
+        checked.add(os.path.abspath(p))
+        checked.add(os.path.relpath(p, vault))
     for key in sources:
-        if key not in checked and not Path(key).exists():
+        resolved = Path(key) if os.path.isabs(key) else (vault / key)
+        if key not in checked and not resolved.exists():
             result["missing"].append(key)
 
     return result
