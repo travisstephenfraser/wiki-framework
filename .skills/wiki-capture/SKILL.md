@@ -142,6 +142,8 @@ lifecycle_changed: <ISO date today>
 ---
 ```
 
+**Schema gate:** include the `base_confidence` / `lifecycle` / `lifecycle_changed` lines only when `WIKI_SCHEMA_PHASE` ≥ 1 in the resolved config. When it is `0`, omit all three — the vault has opted out of the trust schema (see wiki-lint Check 12 Opt-out). The same gate applies to quick mode's per-cluster `base_confidence`/`lifecycle_changed` fields (Step 6 above).
+
 Body structure by type:
 
 **synthesis / decision:**

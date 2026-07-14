@@ -126,6 +126,8 @@ updated: TIMESTAMP
 Use folded scalar syntax (summary: >-) for title and summary to keep frontmatter parser-safe across punctuation (:, #, quotes) without escaping rules.
 Keep the title and summary contents indented by two spaces under summary: >-.
 
+**Schema gate:** include the `base_confidence` / `lifecycle` / `lifecycle_changed` lines only when `WIKI_SCHEMA_PHASE` ≥ 1 in the resolved config. When it is `0`, omit all three — the vault has opted out of the trust schema (see wiki-lint Check 12 Opt-out).
+
 # Page Title
 
 - A fact the codebase or a doc actually states.

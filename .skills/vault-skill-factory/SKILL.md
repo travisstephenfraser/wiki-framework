@@ -56,6 +56,9 @@ candidates.
    - Otherwise `Grep`/`Glob` by tag and wikilink-neighbourhood (pages linked from the seed pages).
 3. **Filter by maturity:** keep pages whose `lifecycle:` is in `SKILL_FACTORY_MATURITY` **or**
    whose `tier:` is `core`. Drop `draft` pages unless the user explicitly includes them.
+   **Schema-free vaults** (`WIKI_SCHEMA_PHASE=0` in the resolved config — no `lifecycle`/`tier`
+   fields exist): judge maturity by incoming-link count (hub-degree) and documented application
+   count instead, and record the substituted criteria in `SKILL_FACTORY.md`.
 4. **Confirm the cluster with the user** (list page names + count) before generating. If fewer than
    ~3 mature pages match, say so — a skill from one thin page isn't worth it; offer to proceed anyway
    or widen the net.

@@ -119,6 +119,8 @@ lifecycle_changed: TIMESTAMP_DATE
 - [[<other related pages>]]
 ```
 
+**Schema gate:** include the `base_confidence` / `lifecycle` / `lifecycle_changed` lines only when `WIKI_SCHEMA_PHASE` ≥ 1 in the resolved config. When it is `0`, omit all three — the vault has opted out of the trust schema (see wiki-lint Check 12 Opt-out).
+
 **Synthesis pages are mostly `^[inferred]`.** You are drawing connections across sources — that's synthesis by definition. Apply `^[inferred]` to cross-cutting conclusions and `^[ambiguous]` where sources disagree.
 
 **The title format is `A × B`** — this signals to readers that it's a synthesis page, not a page about either concept alone.

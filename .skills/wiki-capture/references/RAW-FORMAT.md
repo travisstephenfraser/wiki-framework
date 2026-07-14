@@ -80,7 +80,7 @@ Apply provenance markers inline per the `llm-wiki` convention:
 | `^[inferred]` | Synthesized or generalized beyond what was directly said |
 | `^[ambiguous]` | Uncertain, potentially incomplete, or contradicted elsewhere |
 
-Use the table below to set `base_confidence` and the `provenance` split:
+**Schema gate:** the `base_confidence` / `lifecycle` / `lifecycle_changed` fields apply only when `WIKI_SCHEMA_PHASE` ≥ 1 in the resolved config; when `0`, omit them from raw files too. Otherwise, use the table below to set `base_confidence` and the `provenance` split:
 
 | Evidence strength | `extracted` | `inferred` | `base_confidence` |
 |---|---|---|---|
