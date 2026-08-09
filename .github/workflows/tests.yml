@@ -1,0 +1,87 @@
+name: tests
+
+# The test suite had no CI. That made every guard in it decorative: a green
+# guard and a red guard had identical consequences unless a human remembered to
+# run pytest, and an adversarial review found two plausible merge resolutions
+# where a fork invariant was lost AND `pytest tests/` collected zero tests, so
+# even a human running the documented command would have seen nothing.
+#
+# Two deliberate choices below, both load-bearing:
+#
+#   1. fork-guard runs FIRST, PINNED to its own file. pytest aborts the whole
+#      session on any collection error, so a single unrelated broken import
+#      elsewhere silences every test including the guard. Pinning it means an
+#      unrelated breakage cannot mask a lost fork invariant.
+#   2. The full suite uses --continue-on-collection-errors for the same reason,
+#      so a broken module degrades to "that module failed" instead of
+#      "0 tests collected, exit 2", which reads like success at a glance.
+
+on:
+  push:
+    branches: [main, "merge/**", "feature/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fork-guard:
+    # Fork-local invariants. Kept separate so an unrelated collection error
+    # cannot silence it -- that exact failure mode is why this job exists.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pytest
+      - name: Fork-scope invariants (_meta / _generated-skills)
+        run: |
+          if ! python -m pytest tests/test_fork_scope.py -q; then
+            echo "::error::A fork-local invariant was lost. _meta and" \
+                 "_generated-skills must stay excluded from lint AND trust" \
+                 "scope (lint.SKIP_DIRS, trust.TRUST_SKIP_DIRS). Losing it" \
+                 "makes trust-check fail unconditionally on any real vault" \
+                 "and aborts trust-record --all. See tests/test_fork_scope.py."
+            exit 1
+          fi
+
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pytest pytest-subtests
+      - name: Full suite
+        # --continue-on-collection-errors: a broken import must not collapse the
+        # run to "0 collected", which exits non-zero but looks like nothing ran.
+        run: python -m pytest tests/ -q --continue-on-collection-errors
+
+      - name: Assert the suite actually collected tests
+        # A guard against the guard. "0 tests collected" is the shape that made
+        # the pre-CI suite silently useless; assert a floor explicitly.
+        run: |
+          COUNT=$(python -m pytest tests/ -q --collect-only --continue-on-collection-errors 2>/dev/null | grep -cE '::' || true)
+          echo "collected: $COUNT"
+          if [ "$COUNT" -lt 150 ]; then
+            echo "::error::Only $COUNT tests collected (expected 150+). A" \
+                 "collection error is hiding most of the suite."
+            exit 1
+          fi
+
+  detector:
+    # The corruption detector is a Ruby script with no coverage of its own.
+    # These fixtures assert it still detects; without them a future edit could
+    # silently turn it into a tool that always reports IDENTICAL.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet pytest
+      - name: Detector self-test
+        run: python -m pytest tests/test_vault_fingerprint.py -q

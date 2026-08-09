@@ -213,22 +213,35 @@ end
 # so it warns and the manifest is still written; refusing to write is the failure mode
 # that gets a guard switched off mid-operation.
 def degeneracy_errors(man)
+  # FATAL only. "The instrument is reading itself" means UNRELATED things collapse
+  # onto one value — distinct pages producing an identical body hash. That cannot
+  # happen with real content and means we are hashing a constant.
   pages = man['pages']
   return [] if pages.size < 10
-  errs = []
   by_body = Hash.new(0)
   pages.each_value { |v| by_body[v['body_sha256']] += 1 }
-  top_body, n_body = by_body.max_by { |_, n| n }
-  errs << "#{n_body} pages share body hash #{top_body[0, 12]} — hashing a constant?" if n_body > [3, pages.size * 0.02].max
+  top, n = by_body.max_by { |_, c| c }
+  return [] unless n > [3, pages.size * 0.02].max
+  ["#{n} pages share body hash #{top[0, 12]} — hashing a constant?"]
+end
+
+def degeneracy_warnings(man)
+  # NOT fatal. A field carrying one value across the whole vault is ordinary data
+  # (`category` in a single-category vault; `lifecycle` after a normalisation
+  # pass), not a broken measurement. v1 raised on this, so a legitimate migration
+  # outcome made the vault un-capturable — and a tool that refuses to produce a
+  # manifest mid-operation is a tool that gets switched off. Report it so a
+  # genuinely suspicious constant is still visible, and carry on.
+  pages = man['pages']
+  return [] if pages.size < 10
   by_field = Hash.new { |h, k| h[k] = Hash.new(0) }
   pages.each_value { |v| v['fields'].each { |k, h| by_field[k][h] += 1 } }
-  by_field.each do |field, hist|
+  by_field.each_with_object([]) do |(field, hist), out|
     present = hist.values.sum
     next if present < pages.size * 0.5 || present <= 10
     top, n = hist.max_by { |_, c| c }
-    errs << "field #{field} has one value across all #{present} pages (#{top[0, 8]})" if n == present
+    out << "field #{field} has one value across all #{present} pages (#{top[0, 8]})" if n == present
   end
-  errs
 end
 
 def compare(before, after)
@@ -344,6 +357,7 @@ when 'capture'
   errs = degeneracy_errors(man)
   abort("DEGENERACY CHECK FAILED (measurement may be reading itself):\n  - " + errs.join("\n  - ")) unless errs.empty?
   File.write(out, JSON.pretty_generate(man))
+  degeneracy_warnings(man).each { |w| warn "NOTE: #{w}" }
   warn "captured #{man['stats'].to_json} -> #{out}"
   unless man['blind_spots'].empty?
     warn "WARNING: #{man['blind_spots'].size} page(s) BLIND to the field diff (parse/encoding error)."
