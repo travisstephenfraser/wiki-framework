@@ -37,7 +37,10 @@ ALLOWED_RELATIONSHIP_TYPES = frozenset(
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 _FIELD_RE = re.compile(r"^([A-Za-z_][\w-]*):", re.MULTILINE)
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
+# Target excludes `[` so a footnote-wrapped link `^[[[page|alias]]]` captures `page`,
+# not `[page`. The optional `\\?` before the alias/heading separator handles pipes
+# escaped for Markdown tables — `[[page\|Alias]]` — which otherwise capture as `page\`.
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#\[]+?)(?:\\?[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 _RELATIONSHIP_LIST_FIELD_RE = re.compile(r"^\s*-\s*(type|target):\s*(.*?)\s*$")
 _RELATIONSHIP_ITEM_START_RE = re.compile(r"^\s*-\s*(?:#.*)?$")

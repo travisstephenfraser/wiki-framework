@@ -124,3 +124,38 @@ def test_lint_cli_uses_configured_vault_and_strict_mode(tmp_path: Path) -> None:
     data = json.loads(proc.stdout)
     assert data["status"] == "warn"
     assert "concepts/alpha.md" in data["findings"]["missing_summaries"]
+
+
+def test_lint_vault_parses_escaped_pipe_and_footnote_wrapped_wikilinks(tmp_path: Path) -> None:
+    """Regression: table-escaped pipes and footnote-wrapped links are not broken links.
+
+    `[[page\\|Alias]]` is valid Obsidian inside a Markdown table cell, and
+    `^[[[page|alias]]]` is a wikilink inside a footnote. Both previously captured a
+    malformed target (`page\\` and `[page`) and reported as broken_links, which put a
+    standing false-positive floor under every lint run.
+    """
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    body = (
+        "| col | col |\n"
+        "|---|---|\n"
+        "| [[alpha\\|Alpha]] | cell |\n\n"
+        "Footnote ^[[[alpha#Section|see here]]] inline.\n"
+    )
+    page = _page(vault, "concepts/beta.md")
+    page.write_text(page.read_text() + body, encoding="utf-8")
+
+    report = lint_vault(vault)
+
+    assert report["findings"]["broken_links"] == []
+
+
+def test_lint_vault_still_reports_genuinely_broken_escaped_link(tmp_path: Path) -> None:
+    """The escaped-pipe fix must not blind lint to a real missing target."""
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    page.write_text(page.read_text() + "\n| [[ghost\\|Ghost]] |\n", encoding="utf-8")
+
+    report = lint_vault(vault)
+
+    assert {"page": "concepts/alpha.md", "target": "ghost"} in report["findings"]["broken_links"]
