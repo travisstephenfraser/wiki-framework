@@ -274,3 +274,61 @@ class TestGraphQueryCLI:
     def test_missing_vault_exits_nonzero(self, tmp_path):
         proc = self._run("graph-query", str(tmp_path / "nope"), "anything")
         assert proc.returncode != 0
+
+
+# ---------------------------------------------------------------------------
+# Folded-scalar frontmatter (regression)
+# ---------------------------------------------------------------------------
+
+def test_folded_title_and_summary_are_read_not_captured_as_block_indicator(vault):
+    """`title: >-` / `summary: >-` put the value on the next indented lines.
+
+    A regex stopping at end-of-line captures the block indicator instead of the text,
+    and stripping ">-" then yields an empty string. Both title and summary silently
+    became junk on every page using the folded style -- which is the dominant
+    convention in the reference vault (151 of 201 pages), so most of the corpus was
+    unsearchable by summary and had no usable title.
+    """
+    (vault / "concepts").mkdir(parents=True, exist_ok=True)
+    (vault / "concepts" / "folded.md").write_text(
+        "---\n"
+        "title: >-\n"
+        "    Telemetry Validity Gating\n"
+        "summary: >-\n"
+        "    Sensor telemetry must be gated before it grounds a model, or a dropout\n"
+        "    reads as valid signal.\n"
+        "tags: [ai]\n"
+        "---\n"
+        "# Body\n",
+        encoding="utf-8",
+    )
+    (vault / "concepts" / "plain.md").write_text(
+        "---\ntitle: Plain Page\nsummary: A plain single-line summary.\ntags: [ai]\n---\n# Body\n",
+        encoding="utf-8",
+    )
+
+    index = build_index(vault)
+
+    folded = index["folded"]
+    assert folded["title"] == "Telemetry Validity Gating"
+    assert folded["summary"].startswith("Sensor telemetry must be gated")
+    assert "dropout reads as valid signal" in folded["summary"]
+    # The failure mode being guarded against:
+    assert folded["title"] not in {">", ">-", "|", "|-", ""}
+    assert folded["summary"] not in {">", ">-", "|", "|-", ""}
+
+    # Plain scalars must keep working.
+    assert index["plain"]["title"] == "Plain Page"
+    assert index["plain"]["summary"] == "A plain single-line summary."
+
+
+def test_folded_summary_terms_are_searchable(vault):
+    """The consequence that matters: folded summaries must contribute to ranking."""
+    (vault / "concepts").mkdir(parents=True, exist_ok=True)
+    (vault / "concepts" / "folded.md").write_text(
+        "---\ntitle: >-\n    Folded\nsummary: >-\n    A distinctive zarquon marker.\ntags: [ai]\n---\n# Body\n",
+        encoding="utf-8",
+    )
+    index = build_index(vault)
+    ranked = rank_candidates(index, ["zarquon"])
+    assert ranked, "a term present only in a folded summary must still rank"

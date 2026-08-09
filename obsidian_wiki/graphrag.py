@@ -26,7 +26,7 @@ to open, replacing the current approach of opening 10+ pages speculatively.
 from __future__ import annotations
 
 import re
-from collections import defaultdict, deque
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -45,13 +45,37 @@ _TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 
-SKIP_DIRS = frozenset(
-    "_raw _archived _staging _archives .obsidian".split()
-)
+SKIP_DIRS = frozenset("_raw _archived _staging _archives .obsidian".split())
 
 
 def _slug(s: str) -> str:
     return s.strip().lower().replace(" ", "-")
+
+
+def _folded_scalar(front: str, key: str) -> str:
+    """Read a frontmatter scalar, following a folded/literal block if present.
+
+    `title: >-` / `summary: >-` put the value on the following indented lines. A regex
+    that stops at end-of-line captures the block indicator (`>-`) instead of the text,
+    and `.strip(">-")` then yields an empty string — so both title and summary silently
+    read as junk on every page using the folded style. That is 151 of 201 pages in the
+    reference vault, i.e. the house convention. Mirrors lint._parse_frontmatter_values.
+    """
+    lines = front.splitlines()
+    for i, line in enumerate(lines):
+        if not line.startswith(f"{key}:"):
+            continue
+        value = line.split(":", 1)[1].strip()
+        if value not in {">", ">-", "|", "|-"}:
+            return value.strip("'\"")
+        block: list[str] = []
+        for child in lines[i + 1 :]:
+            if child.startswith((" ", "\t")):
+                block.append(child.strip())
+                continue
+            break
+        return " ".join(part for part in block if part).strip()
+    return ""
 
 
 def build_index(vault: Path) -> dict[str, dict]:
@@ -63,7 +87,8 @@ def build_index(vault: Path) -> dict[str, dict]:
     pages: dict[str, dict] = {}
 
     md_files = [
-        p for p in vault.rglob("*.md")
+        p
+        for p in vault.rglob("*.md")
         if not any(part in SKIP_DIRS for part in p.relative_to(vault).parts)
     ]
 
@@ -78,10 +103,7 @@ def build_index(vault: Path) -> dict[str, dict]:
         front_m = _FRONT_RE.match(text)
         front = front_m.group(1) if front_m else ""
 
-        title = ""
-        m = _TITLE_RE.search(front)
-        if m:
-            title = m.group(1).strip().strip(">-").strip()
+        title = _folded_scalar(front, "title")
 
         tags: list[str] = []
         m = _TAGS_RE.search(front)
@@ -90,12 +112,13 @@ def build_index(vault: Path) -> dict[str, dict]:
         else:
             m2 = _TAGS_LIST_RE.search(front)
             if m2:
-                tags = [ln.strip().lstrip("- ") for ln in m2.group(1).splitlines() if ln.strip()]
+                tags = [
+                    ln.strip().lstrip("- ")
+                    for ln in m2.group(1).splitlines()
+                    if ln.strip()
+                ]
 
-        summary = ""
-        m = _SUMMARY_RE.search(front)
-        if m:
-            summary = m.group(1).strip()
+        summary = _folded_scalar(front, "summary")
 
         category = str(page.relative_to(vault).parent)
         m = _CATEGORY_RE.search(front)
@@ -201,6 +224,7 @@ def rank_candidates(
 # Multi-hop path finding (BFS)
 # ---------------------------------------------------------------------------
 
+
 def find_path(
     index: dict[str, dict],
     source_slug: str,
@@ -266,22 +290,61 @@ def classify_query(question: str) -> tuple[str, list[str]]:
 
     if _GAP_PATTERNS.search(question):
         # Extract what the gap is about
-        terms = re.sub(r"what (?:do|don't) I (?:not )?know about|what.?s missing", "", question, flags=re.IGNORECASE).strip().split()
+        terms = (
+            re.sub(
+                r"what (?:do|don't) I (?:not )?know about|what.?s missing",
+                "",
+                question,
+                flags=re.IGNORECASE,
+            )
+            .strip()
+            .split()
+        )
         return "gap", terms
 
     if _LIST_PATTERNS.search(question):
-        terms = re.sub(r"(?:list|show|find|give me) (?:all|every|pages about)", "", question, flags=re.IGNORECASE).strip().split()
+        terms = (
+            re.sub(
+                r"(?:list|show|find|give me) (?:all|every|pages about)",
+                "",
+                question,
+                flags=re.IGNORECASE,
+            )
+            .strip()
+            .split()
+        )
         return "list", terms
 
     # Default: extract meaningful terms (drop stop words)
-    stop = {"what", "the", "a", "an", "is", "are", "how", "does", "do", "in", "of", "to", "for", "and", "or"}
-    terms = [w.strip("?,.'\"") for w in question.split() if w.lower().strip("?,.'\"") not in stop and len(w) > 2]
+    stop = {
+        "what",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "how",
+        "does",
+        "do",
+        "in",
+        "of",
+        "to",
+        "for",
+        "and",
+        "or",
+    }
+    terms = [
+        w.strip("?,.'\"")
+        for w in question.split()
+        if w.lower().strip("?,.'\"") not in stop and len(w) > 2
+    ]
     return "direct", terms
 
 
 # ---------------------------------------------------------------------------
 # Main query entry point
 # ---------------------------------------------------------------------------
+
 
 def query(
     vault: Path,
@@ -309,8 +372,12 @@ def query(
     god_slugs = sorted(degree, key=lambda s: -degree[s])[:10]
     term_set = {t.lower() for t in terms}
     god_relevant = [
-        index[s]["path"] for s in god_slugs
-        if any(t in index[s]["title"].lower() or t in " ".join(index[s]["tags"]).lower() for t in term_set)
+        index[s]["path"]
+        for s in god_slugs
+        if any(
+            t in index[s]["title"].lower() or t in " ".join(index[s]["tags"]).lower()
+            for t in term_set
+        )
     ][:5]
 
     path_result: list[str] = []
@@ -334,7 +401,9 @@ def query(
     top_candidate = candidates[0] if candidates else None
     index_only = False
     if top_candidate and top_candidate["score"] >= 10.0 and top_candidate["summary"]:
-        index_only = True  # Exact title match with a summary — likely answerable from index
+        index_only = (
+            True  # Exact title match with a summary — likely answerable from index
+        )
 
     should_read = [c["page"] for c in candidates[:max_should_read] if not index_only]
     if path_result and not index_only:
@@ -342,7 +411,7 @@ def query(
         for p in path_result:
             if p not in should_read:
                 should_read.append(p)
-        should_read = should_read[:max_should_read + 2]
+        should_read = should_read[: max_should_read + 2]
 
     return {
         "answer_type": answer_type,
