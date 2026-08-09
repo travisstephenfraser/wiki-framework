@@ -42,7 +42,10 @@ _TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
 _SUMMARY_RE = re.compile(r"^summary:\s*(.+?)$", re.MULTILINE)
 _CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
 _TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
+# Keep in sync with obsidian_wiki/lint.py. Target excludes `[` so a footnote-wrapped
+# `^[[[page|alias]]]` yields `page`; the optional `\\?` handles pipes escaped for
+# Markdown tables (`[[page\|Alias]]`), which otherwise capture as `page\`.
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#\[]+?)(?:\\?[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 
 SKIP_DIRS = frozenset("_raw _archived _staging _archives .obsidian".split())

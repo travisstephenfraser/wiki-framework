@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from obsidian_wiki.lint import lint_vault
 from obsidian_wiki.trust import build_trust_ledger, write_trust_ledger
 
@@ -159,3 +161,60 @@ def test_lint_vault_still_reports_genuinely_broken_escaped_link(tmp_path: Path) 
     report = lint_vault(vault)
 
     assert {"page": "concepts/alpha.md", "target": "ghost"} in report["findings"]["broken_links"]
+
+
+# ---------------------------------------------------------------------------
+# Link-extraction coverage (mutation-driven)
+#
+# The two tests above assert an ABSENCE (`broken_links == []`), which any
+# under-matching pattern satisfies. Mutation testing proved that inadequate: a
+# pattern losing 464 of 3728 real links, one blind to every heading-anchored
+# link, and one that drops the `[`-exclusion entirely all passed the full suite.
+# These assert PRESENCE — each form must resolve to a specific target — so an
+# under-matching pattern fails instead of passing quietly.
+# ---------------------------------------------------------------------------
+
+WIKILINK_FORMS = [
+    ("plain", "[[ghost]]"),
+    ("alias", "[[ghost|Alias]]"),
+    ("heading", "[[ghost#Section]]"),
+    ("heading+alias", "[[ghost#Section|Alias]]"),
+    ("escaped pipe (table)", r"| [[ghost\|Alias]] |"),
+    ("escaped pipe + heading", r"[[ghost\|Alias]] and [[ghost#Sec]]"),
+    ("footnote-wrapped", "^[[[ghost|see]]]"),
+    ("footnote, no alias", "^[[[ghost]]]"),
+    ("path-qualified", "[[concepts/ghost]]"),
+]
+
+
+@pytest.mark.parametrize("label,form", WIKILINK_FORMS, ids=[f[0] for f in WIKILINK_FORMS])
+def test_every_wikilink_form_resolves_to_its_target(tmp_path: Path, label: str, form: str) -> None:
+    """Each form must be extracted AND resolved to `ghost`, so a missing target reports."""
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    page.write_text(page.read_text() + "\n" + form + "\n", encoding="utf-8")
+
+    report = lint_vault(vault)
+
+    targets = [b["target"] for b in report["findings"]["broken_links"]]
+    assert "ghost" in targets, f"{label}: link not extracted or not resolved -> {targets}"
+
+
+def test_link_count_is_stable_across_forms(tmp_path: Path) -> None:
+    """Total extracted links must equal the number written.
+
+    A pattern that silently drops a form keeps `broken_links` plausible while the
+    graph shrinks. This asserts the count directly, which is what an absence
+    assertion cannot do.
+    """
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/ghost.md")
+    page = _page(vault, "concepts/alpha.md")
+    body = "\n".join(form for _, form in WIKILINK_FORMS)
+    page.write_text(page.read_text() + "\n" + body + "\n", encoding="utf-8")
+
+    report = lint_vault(vault)
+
+    # 9 forms, one of which ("escaped pipe + heading") contains two links.
+    assert report["stats"]["link_count"] == len(WIKILINK_FORMS) + 1
+    assert report["findings"]["broken_links"] == []

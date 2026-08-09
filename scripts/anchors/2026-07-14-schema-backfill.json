@@ -1,0 +1,20 @@
+{
+  "note": "wiki-vault T6 schema backfill, commit 8f58fdb (range 8f58fdb^..8f58fdb). Known-answer test for vault_fingerprint.rb.",
+  "_ground_truth": [
+    "Source 1 (human, external): commit 8f58fdb subject reads 'T6: atomic field backfill -- base_confidence/lifecycle/lifecycle_changed on 186 pages', and its body notes 'macos-migration skipped (pre-existing fields)'.",
+    "Source 2 (mechanical, independent of this tool): `grep -rl '^base_confidence:' --include='*.md'` over `git archive` extractions of both trees gives pre=1, post=187, delta=186. Same for lifecycle and lifecycle_changed.",
+    "Source 3 (git): `git show --numstat 8f58fdb` modifies 187 .md files; 188 files changed total (the extra is the worktable page added below).",
+    "tier delta is 0 over THIS range -- tier was added one commit earlier by e785310 (T5, 'threshold 10, 44 core / 143 supporting'). Asserting 0 here is deliberate: it proves the tool does not invent field deltas.",
+    "These numbers were established BEFORE running the tool against this range, and must never be edited to match tool output. If the tool disagrees, the tool is wrong."
+  ],
+  "_reconciliation": "A blind page (parse or encoding error either side) has an UNKNOWN field delta, not a delta of one. The assertion in code is therefore an interval: expected must lie in [observed, observed + blind]. Getting this wrong in both directions is instructive -- v1 reported `observed` alone (read 180 against a documented 186, and still exited 0), and the first fix asserted `observed + blind == expected`, which then falsely failed `tier` (0 observed, 6 blind, 0 expected). `blind` is asserted exactly below, so the interval width is pinned and small.",
+  "fields_added": {
+    "String/base_confidence": 186,
+    "String/lifecycle": 186,
+    "String/lifecycle_changed": 186,
+    "String/tier": 0
+  },
+  "pages_added": 1,
+  "pages_removed": 0,
+  "blind": 6
+}

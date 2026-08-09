@@ -37,7 +37,10 @@ from typing import Any
 # Wikilink / frontmatter parsing
 # ---------------------------------------------------------------------------
 
-_WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:[|#][^\]]*?)?\]\]")
+# Keep in sync with obsidian_wiki/lint.py. Target excludes `[` so a footnote-wrapped
+# `^[[[page|alias]]]` yields `page`; the optional `\\?` handles pipes escaped for
+# Markdown tables (`[[page\|Alias]]`), which otherwise capture as `page\`.
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#\[]+?)(?:\\?[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
 _TAGS_RE = re.compile(r"^tags:\s*\[([^\]]+)\]", re.MULTILINE)
 _TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
