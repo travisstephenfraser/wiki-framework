@@ -41,13 +41,51 @@ print(d.get('transcript_path', ''))
 
 [[ -z "$TRANSCRIPT_PATH" || ! -f "$TRANSCRIPT_PATH" ]] && exit 0
 
-# Count meaningful tool uses: Write/Edit = file mutations, Bash = shell work
-COUNTS=$(python3 - "$TRANSCRIPT_PATH" <<'PYEOF'
-import json, sys
+# Count meaningful tool uses.
+#
+# Editor writes (Write/Edit/NotebookEdit) are exact. Shell writes are NOT: a
+# session that does all its file mutation through Bash (bulk edits driven by a
+# script, heredocs, sed -i, redirection) is invisible to a tool-name counter.
+# That happened on 2026-08-13 — 27 vault files rewritten, reported as "0 file
+# edit(s)" — and the failure direction is the flattering one: an undercount
+# reads as "quiet session", which pushes /wiki-capture toward SKIP. So Bash
+# commands are pattern-matched for filesystem mutation and folded into the
+# total, biased to OVER-count. A false positive costs one capture prompt that
+# the skill's own KEEP/SKIP gate then discards; a false negative silently loses
+# the session's findings.
+#
+# NOTE: this heredoc is deliberately NOT wrapped in $( ). Bash's command-
+# substitution scanner tokenizes the body looking for the closing paren, so a
+# regex containing an unbalanced quote or a [^)] class breaks the parse with a
+# confusing "unexpected EOF" pointing at a line far below. Redirect to a temp
+# file instead and read it back.
+COUNTS_FILE=$(mktemp "${TMPDIR:-/tmp}/wiki-stop-capture-counts.XXXXXX")
+trap 'rm -f "$COUNTS_FILE"' EXIT
+
+python3 - "$TRANSCRIPT_PATH" > "$COUNTS_FILE" <<'PYEOF'
+import json, re, sys
 
 path = sys.argv[1]
-write_edit = 0
+editor_writes = 0
+shell_writes = 0
 bash_count = 0
+
+# Conservative-in-the-safe-direction: any of these in a Bash command means the
+# call plausibly wrote to disk. Stderr/stdout redirects to /dev/null and simple
+# fd dups are excluded so they don't mark every `cmd 2>/dev/null` as a write.
+WRITE_PATTERNS = re.compile(
+    r"""(?:
+          \btee\b
+        | \bsed\b[^|;&]*\s-i
+        | \b(?:cp|mv|rm|mkdir|rmdir|touch|ln|install|rsync|truncate|chmod|chown)\b
+        | \bgit\s+(?:commit|apply|checkout|restore|reset|rm|mv|clean|stash)\b
+        | \b(?:npm|pnpm|yarn|pip|pip3|cargo|go|brew)\s+(?:install|add|remove|uninstall)\b
+        | \bwrite_text\b | \bwritelines\b | \bFile\.write\b | \bfs\.write
+        | \bopen\s*\([^)]*['"][wax]
+        | >>? \s* (?!\s*&?\s*/dev/null\b)(?!&\s*[0-9])
+    )""",
+    re.X,
+)
 
 with open(path) as f:
     for line in f:
@@ -66,22 +104,28 @@ with open(path) as f:
                 continue
             name = block.get("name", "")
             if name in ("Write", "Edit", "NotebookEdit"):
-                write_edit += 1
+                editor_writes += 1
             elif name == "Bash":
                 bash_count += 1
+                cmd = (block.get("input") or {}).get("command", "") or ""
+                if WRITE_PATTERNS.search(cmd):
+                    shell_writes += 1
 
-print(write_edit, bash_count)
+print(editor_writes, shell_writes, bash_count)
 PYEOF
-)
 
-WRITE_EDIT=$(echo "$COUNTS" | awk '{print $1}')
-BASH_COUNT=$(echo "$COUNTS" | awk '{print $2}')
+COUNTS=$(cat "$COUNTS_FILE")
 
-# Trigger if any file was written/edited, or if there were ≥ 4 shell calls
+EDITOR_WRITES=$(echo "$COUNTS" | awk '{print $1}')
+SHELL_WRITES=$(echo "$COUNTS" | awk '{print $2}')
+BASH_COUNT=$(echo "$COUNTS" | awk '{print $3}')
+FILE_WRITES=$(( ${EDITOR_WRITES:-0} + ${SHELL_WRITES:-0} ))
+
+# Trigger if anything plausibly wrote to disk, or if there were ≥ 4 shell calls
 # (suggesting investigation/debugging worth preserving).
-if [[ "${WRITE_EDIT:-0}" -ge 1 ]] || [[ "${BASH_COUNT:-0}" -ge 4 ]]; then
+if [[ "${FILE_WRITES:-0}" -ge 1 ]] || [[ "${BASH_COUNT:-0}" -ge 4 ]]; then
   [[ -n "$SENTINEL" ]] && : > "$SENTINEL" 2>/dev/null || true
-  echo "Session ended with ${WRITE_EDIT} file edit(s) and ${BASH_COUNT} shell call(s). Please run /wiki-capture --quick now to preserve any reusable findings before this context closes." >&2
+  echo "Session ended with ~${FILE_WRITES} file-writing call(s) (${EDITOR_WRITES} via editor, ${SHELL_WRITES} via shell — the shell figure is a pattern-match estimate, not exact) and ${BASH_COUNT} shell call(s) total. Please run /wiki-capture --quick now to preserve any reusable findings before this context closes." >&2
   exit 2
 fi
 
