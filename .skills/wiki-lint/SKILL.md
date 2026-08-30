@@ -142,16 +142,36 @@ Check whether pages are being honest about how much of their content is inferred
 
 Checks whether pages that share a tag are actually linked to each other. Tags imply a topic cluster; if those pages don't reference each other, the cluster is fragmented — knowledge islands that should be woven together.
 
-**How to check:**
-- For each tag that appears on ≥ 5 pages:
-  - `n` = count of pages with this tag
-  - `actual_links` = count of wikilinks between any two pages in this tag group (check both directions)
-  - `cohesion = actual_links / (n × (n−1) / 2)`
-- Flag any tag group where cohesion < 0.15 and n ≥ 5
+**Exclude system tags first.** Skip every `status/` and `visibility/` tag. Pages do not link each
+other for sharing a lifecycle state, so cohesion over `#status/active` measures nothing.
+
+**How to check:** for each *domain* tag on ≥ 5 pages, build the subgraph of those pages and the
+wikilinks between them (either direction), then compute:
+
+- `isolated` = pages with **zero** in-tag links; `isolated_frac = isolated / n`
+- `components` = connected components in the subgraph
+- `cohesion = actual_links / (n × (n−1) / 2)` — **context only, not the primary gate**
+
+Flag when **`isolated_frac > 0.30`**, or when **`n ≤ 12` and `cohesion < 0.15`**.
+
+**Cohesion alone is n-biased — never threshold on it at scale.** The denominator `n(n−1)/2` grows
+quadratically while a page's realistic link budget does not, so a large tag is mathematically
+unable to clear a fixed 0.15 bar: `#ai` at n=66 would need 322 internal links, i.e. every page
+linking ~10 others *within that one tag*. The failure is not hypothetical — measured on this vault
+(2026-08-29): `#validation` (n=47) scores cohesion 0.119 and reads "fragmented", yet it has **zero
+isolated pages and exactly one connected component** — every page reaches every other. The raw
+cohesion gate flagged 9 tags; the isolation gate flagged 1, and that 1 was the only group a human
+read confirmed. `isolated_frac` and `components` are n-invariant, which is why they carry the gate.
+
+**Known-answer anchor:** `#calibration` (n=5) sat at cohesion 0.000 with 5/5 pages isolated across
+2 lints (2026-08-13, 2026-08-29). After the cross-linker pass added 6 edges it reads cohesion 0.600,
+0 isolated, 1 component. A revision of this check must flag it in the first state and clear it in
+the second; if it does neither, the metric is broken, not the vault.
 
 **How to fix:**
 - Run the `cross-linker` skill targeted at the fragmented tag — it will surface and insert the missing links
-- If a tag group is large (n > 15) and still fragmented, consider splitting it into more specific sub-tags
+- Prefer linking the **isolated** pages specifically; they are the finding, not the cohesion number
+- If a tag group is large (n > 15) and genuinely fragmented (high `isolated_frac`, several components), consider splitting it into more specific sub-tags
 
 ### 9. Visibility Tag Consistency
 

@@ -57,6 +57,28 @@ For each page in the vault:
 
 4. **Check for semantic connections** — pages that share multiple tags or are in the same project directory but don't link to each other
 
+### Tag rarity: filter before you score co-occurrence
+
+**Compute tag document-frequency before using tags as a signal.** In a mature vault the tag
+distribution is heavily skewed, and a raw "2+ shared tags" count then measures the vault's
+tagging habits rather than any relationship between two pages — the scan reads a property of its
+own substrate and reports it as signal.
+
+1. Count how many pages carry each tag (frontmatter only, no page reads).
+2. Treat any tag on **≥ 6% of live pages** as *generic*, along with all `status/` and
+   `visibility/` system tags.
+3. Require **2+ shared tags from the remaining specific set** before awarding the shared-tag +2.
+
+**Degeneracy check (assert, don't warn):** if the surviving pairs are overwhelmingly justified by
+the same two or three tags, the filter has not bitten — recheck the threshold before acting on the
+output. Concentration is the tell, exactly as it is for `_meta/` worktables dominating the
+name-mention pass.
+
+*Measured on the reference vault (2026-08-29, 218 live pages): `ai` 30.3%, `validation` 21.6%,
+`rubrica` 20.2%, `claude-code` 19.3%. Unfiltered, the pass returned 60+ pairs built entirely from
+that head. Filtered, 20 pairs remained and every one survived a referent check.* The 6% figure is a
+working threshold for a vault of that size, not a derived constant — recompute it, don't inherit it.
+
 ### Matching Rules
 
 - **Case-insensitive matching** for names (e.g., "my-project" matches page `MyProject`)
@@ -76,7 +98,7 @@ Not every possible link is worth adding. Score each candidate using a composite 
 | Signal | Points | Example |
 |---|---|---|
 | **Exact name match in text** | +4 | "MyProject" appears in body text → link to my-project.md |
-| **Shared tags (2+)** | +2 | Both tagged `#ai #agent` but no link between them |
+| **Shared *specific* tags (2+)** | +2 | Both tagged `#dock-sim #operations` but no link between them — see the tag-rarity rule below; a raw count over common tags scores noise |
 | **Same project, no link** | +2 | Both under `projects/my-project/` but don't reference each other |
 | **Mentioned entity/concept** | +2 | Page mentions "knowledge graphs" → link to `[[concepts/knowledge-graphs]]` |
 | **Cross-category connection** | +2 | Source is in `concepts/`, target is in `entities/` (or `skills/` ↔ `synthesis/`) — different knowledge layers make this link more architecturally valuable |
