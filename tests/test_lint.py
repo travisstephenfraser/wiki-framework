@@ -218,3 +218,72 @@ def test_link_count_is_stable_across_forms(tmp_path: Path) -> None:
     # 9 forms, one of which ("escaped pipe + heading") contains two links.
     assert report["stats"]["link_count"] == len(WIKILINK_FORMS) + 1
     assert report["findings"]["broken_links"] == []
+
+
+# ---------------------------------------------------------------------------
+# log.md is bookkeeping, not a content page
+#
+# `log.md` is an append-only activity log whose entries carry free-text
+# `note="..."` fields. Those notes quote vault content verbatim -- including
+# wikilink syntax -- so lint counted a QUOTED `[[target]]` as a real link and
+# reported it broken when the target did not exist. Observed three times on the
+# reference vault: the 2026-08-13 LINT entry documenting a `^[[[page#anchor]]]`
+# false positive became one, and a 2026-08-29 note describing a repointed
+# `[[linkedin-writing]]` link added two more. Lint was reading its own history.
+#
+# Only `log` is exempt. `index.md`, `hot.md` and `_insights.md` are curated or
+# generated CONTENT -- a dangling link in any of them is a real defect (a page
+# was renamed and the catalog was not updated), so they must keep reporting.
+# ---------------------------------------------------------------------------
+
+
+def test_quoted_wikilink_in_log_note_is_not_a_broken_link(tmp_path: Path) -> None:
+    """A dangling link quoted inside a log note is bookkeeping, not a vault defect."""
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md", links=["ghost"])
+    log = _page(vault, "log.md")
+    log.write_text(
+        log.read_text()
+        + '- [2026-08-29T10:00:00-0700] LINT note="repointed [[phantom]] to [[alpha]]"\n',
+        encoding="utf-8",
+    )
+
+    report = lint_vault(vault)
+
+    targets = [b["target"] for b in report["findings"]["broken_links"]]
+    # Presence: a real content page's dangling link still reports, so an
+    # over-broad fix that silences broken_links entirely fails here.
+    assert "ghost" in targets
+    assert "phantom" not in targets
+
+
+@pytest.mark.parametrize("stem", ["index", "hot", "_insights"])
+def test_dangling_links_in_other_reserved_pages_still_report(
+    tmp_path: Path, stem: str
+) -> None:
+    """Only `log` is exempt -- the catalog pages must keep reporting broken links."""
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    _page(vault, f"{stem}.md", links=["phantom"])
+
+    report = lint_vault(vault)
+
+    targets = [b["target"] for b in report["findings"]["broken_links"]]
+    assert "phantom" in targets, f"{stem}.md must still report dangling links"
+
+
+def test_log_still_counts_as_a_link_source_for_orphan_detection(tmp_path: Path) -> None:
+    """The exemption covers reporting only; log.md must not stop feeding incoming links.
+
+    Excluding log.md from link extraction outright would inflate the orphan
+    count -- the same class of error as excluding index.md, which the vault's
+    own history records producing a 70-of-74-orphans report.
+    """
+    vault = tmp_path / "vault"
+    _page(vault, "concepts/alpha.md")
+    _page(vault, "log.md", links=["alpha"])
+
+    report = lint_vault(vault)
+
+    orphans = [o["page"] if isinstance(o, dict) else o for o in report["findings"]["orphan_pages"]]
+    assert "concepts/alpha.md" not in orphans

@@ -23,6 +23,13 @@ REQUIRED_FRONTMATTER = (
     "lifecycle",
 )
 RESERVED_PAGE_STEMS = frozenset({"index", "log", "hot", "_insights"})
+# `log.md` is an append-only activity log whose entries carry free-text `note="..."`
+# fields quoting vault content verbatim -- wikilink syntax included. A quoted
+# `[[target]]` is a citation, not a link anyone navigates, so a dangling one is not
+# a vault defect. Reporting them made lint read its own history: a LINT entry
+# documenting a broken-link false positive became one. Reporting only -- log.md
+# still feeds `incoming`, because dropping a link SOURCE inflates the orphan count.
+BROKEN_LINK_EXEMPT_STEMS = frozenset({"log"})
 ALLOWED_RELATIONSHIP_TYPES = frozenset(
     {
         "extends",
@@ -198,7 +205,8 @@ def lint_vault(vault: Path, *, require_trust_ledger: bool = True) -> dict[str, A
             if target == page["slug"]:
                 continue
             if target not in by_slug:
-                broken_links.append({"page": page["path"], "target": target})
+                if page["slug"] not in BROKEN_LINK_EXEMPT_STEMS:
+                    broken_links.append({"page": page["path"], "target": target})
                 continue
             incoming[target] += 1
 
