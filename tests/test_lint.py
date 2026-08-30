@@ -287,3 +287,65 @@ def test_log_still_counts_as_a_link_source_for_orphan_detection(tmp_path: Path) 
 
     orphans = [o["page"] if isinstance(o, dict) else o for o in report["findings"]["orphan_pages"]]
     assert "concepts/alpha.md" not in orphans
+
+
+# ---------------------------------------------------------------------------
+# A wikilink inside code is an illustration, not a reference
+#
+# Documenting wikilink syntax anywhere in the vault used to create a broken
+# link: the extractor scanned raw text, so a double-bracket reference written
+# inside backticks to EXPLAIN the syntax was counted as a real link and
+# reported broken. Hit three times in one session on 2026-08-29 while writing
+# up the log.md exemption -- the page describing the bug reproduced it.
+#
+# Masking is scoped to the BODY. Frontmatter must keep resolving, because
+# `relationships:` targets live there and are real typed edges.
+# ---------------------------------------------------------------------------
+
+
+def test_wikilink_in_inline_code_is_not_a_link(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md", links=["ghost"])
+    page.write_text(
+        page.read_text() + "\nWriting `[[phantom]]` in prose documents the syntax.\n",
+        encoding="utf-8",
+    )
+
+    report = lint_vault(vault)
+
+    targets = [b["target"] for b in report["findings"]["broken_links"]]
+    # Presence assertion: a real prose link must still report, so an over-broad
+    # mask that kills all extraction fails here rather than passing quietly.
+    assert "ghost" in targets
+    assert "phantom" not in targets
+
+
+def test_wikilink_in_fenced_code_block_is_not_a_link(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md", links=["ghost"])
+    page.write_text(
+        page.read_text() + "\n```markdown\n[[phantom]]\n```\n",
+        encoding="utf-8",
+    )
+
+    report = lint_vault(vault)
+
+    targets = [b["target"] for b in report["findings"]["broken_links"]]
+    assert "ghost" in targets
+    assert "phantom" not in targets
+
+
+def test_frontmatter_relationship_targets_still_resolve(tmp_path: Path) -> None:
+    """Masking must not reach frontmatter -- typed edges are real links."""
+    vault = tmp_path / "vault"
+    page = _page(vault, "concepts/alpha.md")
+    text = page.read_text().replace(
+        "lifecycle: reviewed",
+        'lifecycle: reviewed\nrelationships:\n  - target: "[[phantom]]"\n    type: related_to',
+    )
+    page.write_text(text, encoding="utf-8")
+
+    report = lint_vault(vault)
+
+    targets = [b["target"] for b in report["findings"]["broken_links"]]
+    assert "phantom" in targets, "frontmatter relationship target must still be checked"

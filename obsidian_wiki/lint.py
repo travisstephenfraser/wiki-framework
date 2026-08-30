@@ -49,6 +49,23 @@ _FIELD_RE = re.compile(r"^([A-Za-z_][\w-]*):", re.MULTILINE)
 # escaped for Markdown tables — `[[page\|Alias]]` — which otherwise capture as `page\`.
 _WIKILINK_RE = re.compile(r"\[\[([^\]|#\[]+?)(?:\\?[|#][^\]]*?)?\]\]")
 _MD_LINK_RE = re.compile(r"\[.*?\]\(([^)]+\.md[^)]*)\)")
+# A wikilink inside code is an illustration of the syntax, not a reference to a
+# page. Any doc explaining wikilinks would otherwise mint a broken link -- which
+# happened three times on 2026-08-29, including in the page documenting the fix.
+# Fences first, then inline spans, so a fenced block containing stray backticks
+# cannot leave an unbalanced span behind.
+_FENCE_RE = re.compile(r"^(?P<f>```|~~~).*?^(?P=f)[^\n]*$", re.S | re.M)
+_INLINE_CODE_RE = re.compile(r"(?P<t>`+)[^\n]*?(?P=t)")
+
+
+def _strip_code(body: str) -> str:
+    """Blank code spans in a page BODY so links inside them are not extracted.
+
+    Scoped to the body on purpose: frontmatter `relationships:` targets are real
+    typed edges and must keep resolving.
+    """
+    body = _FENCE_RE.sub("", body)
+    return _INLINE_CODE_RE.sub("", body)
 _RELATIONSHIP_LIST_FIELD_RE = re.compile(r"^\s*-\s*(type|target):\s*(.*?)\s*$")
 _RELATIONSHIP_ITEM_START_RE = re.compile(r"^\s*-\s*(?:#.*)?$")
 _RELATIONSHIP_FIELD_RE = re.compile(r"^\s+(type|target):\s*(.*?)\s*$")
@@ -167,12 +184,18 @@ def _parse_page(path: Path, vault: Path) -> dict[str, Any]:
     values = _parse_frontmatter_values(frontmatter)
     relative = path.relative_to(vault)
 
+    scannable = (
+        text[: front_match.end()] + _strip_code(text[front_match.end() :])
+        if front_match
+        else _strip_code(text)
+    )
+
     links: list[str] = []
-    for raw in _WIKILINK_RE.findall(text):
+    for raw in _WIKILINK_RE.findall(scannable):
         target = _slug(raw.split("/")[-1])
         if target:
             links.append(target)
-    for href in _MD_LINK_RE.findall(text):
+    for href in _MD_LINK_RE.findall(scannable):
         target = _slug(Path(href).stem)
         if target:
             links.append(target)
