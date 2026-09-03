@@ -380,6 +380,49 @@ Append to the `LINT` log entry:
 ... relationship_issues=N
 ```
 
+### 14. People and Entity Types
+
+Enforces the `type:` and `people:` keys (see `llm-wiki/SKILL.md`, *Entity pages: `type:` and `people:`*). **Opt-out:** if `WIKI_PEOPLE_KEYS=0` in the resolved config, skip Check 14 entirely; unset means on.
+
+The failure this guards is silent by construction: a person who is never recorded produces no error anywhere else, and coverage drifts back to ad hoc the moment attention moves.
+
+**Allowed `type:` values:** `person`, `self`, `organization`, `tool`, `device`
+
+**How to check:**
+- Read the frontmatter (not the body) of every `entities/` page, and grep `^people:` and `^type: self` across the whole vault
+- Build the set of recorded people: the title and `aliases:` of every `type: person` page, plus every name in every `people:` list. Compare names case-insensitively after trimming
+- Then:
+  1. **Untyped or mistyped entity** — an `entities/` page with no `type:`, or a value outside the allowed set
+  2. **Owner count** — exactly one page carries `type: self`; zero is a warning, two or more is an error
+  3. **Double record** — a name that is both a `type: person` page (by title or alias) and a `people:` entry, or appears in two `people:` lists
+  4. **Retired form** — `person` inside `tags:` on any page
+  5. **Unrecorded person (judgement, warning)** — a person named in the body of three or more pages who is on neither route. This is read, not grepped: organisations, products and places also look like two capitalised words, so decide as a reader, and report the top of the list with the page each appears on most. Never create the record from lint; hand it to the next `/wiki-update` or `/wiki-ingest`
+
+**How to fix:**
+- Untyped entity: add `type:` with the right value; a page that is a pair or a company is `organization`, hardware is `device`, software and models are `tool`
+- Mistyped: correct to the nearest allowed value
+- Owner count: one `type: self` on the owner's page; every other person is `person`
+- Double record: keep the entity page and remove the `people:` entry, or keep exactly one `people:` entry on the page that is the primary source
+- Retired form: remove the `person` tag; set `type: person` on an entity page, or add the name to `people:` on the page that is their primary source
+- Unrecorded person: report only, with the page where they appear most, so the next update can run the fold gate's step 3a
+
+**Output additions:**
+
+```markdown
+### People and Entity Type Issues (N found)
+- `entities/devbox.md` — no `type:` (allowed: person, self, organization, tool, device)
+- `entities/foo.md` — `type: laptop` is not an allowed value (did you mean `device`?)
+- vault — `type: self` on 2 pages: `entities/a.md`, `entities/b.md`
+- "Jane Doe" — recorded twice: `entities/jane-doe.md` (type: person) and `people:` on `projects/x/x.md`
+- `entities/albert-deng.md` — `person` in tags is a retired form; use `type: person`
+- "John Roe" (warning) — named on 4 pages, on neither route; most on `projects/y/y.md`
+```
+
+Append to the `LINT` log entry:
+```
+... people_issues=N
+```
+
 ## Output Format
 
 Report findings as a structured list:
@@ -434,6 +477,10 @@ Pages in misc/ that have ≥ 3 connections to a single project and are ready to 
 ### Typed Relationship Issues (N found)
 - `concepts/foo.md` — relationships[1]: type "contradication" is not an allowed type
 - `concepts/bar.md` — relationships[0]: target "[[skills/nonexistent]]" resolves to no page
+
+### People and Entity Type Issues (N found)
+- `entities/devbox.md` — no `type:` (allowed: person, self, organization, tool, device)
+- "Jane Doe" — recorded twice: `entities/jane-doe.md` and `people:` on `projects/x/x.md`
 
 ### Synthesis Gaps (N found)
 Concept pairs that co-occur frequently but have no synthesis page:

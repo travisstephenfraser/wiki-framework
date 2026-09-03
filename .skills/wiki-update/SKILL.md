@@ -96,7 +96,8 @@ Things that aren't project-specific go in the global categories:
 |---|---|
 | A general concept learned | `concepts/` |
 | A reusable pattern or technique | `skills/` |
-| A tool/service/person | `entities/` |
+| A tool, service or device | `entities/` with `type: tool` or `type: device` |
+| A person or organization | `entities/` with `type: person` or `type: organization`; a person too thin for a page goes in `people:` on the page that is their primary source |
 | Cross-project analysis | `synthesis/` |
 
 ### Page format
@@ -128,6 +129,8 @@ Keep the title and summary contents indented by two spaces under summary: >-.
 
 **Schema gate:** include the `base_confidence` / `lifecycle` / `lifecycle_changed` lines only when `WIKI_SCHEMA_PHASE` ≥ 1 in the resolved config. When it is `0`, omit all three — the vault has opted out of the trust schema (see wiki-lint Check 12 Opt-out).
 
+**Entity keys:** every `entities/` page carries `type:` (`person`, `self`, `organization`, `tool`, `device`). Any page that is the primary source for a person who has no entity page carries `people: [Full Name]`; it names who the page is primary for, not everyone it mentions. Definitions: `llm-wiki/SKILL.md`, *Entity pages: `type:` and `people:`*.
+
 # Page Title
 
 - A fact the codebase or a doc actually states.
@@ -152,6 +155,7 @@ Compute the rough fractions and write the `provenance:` block on every new/updat
 - If you're adding to an existing page, update the `updated` timestamp and add the new source.
 - Check `index.md` to see what's already there before creating anything new.
 - **Before creating any new page, run the fold-vs-new-page gate** in `llm-wiki/SKILL.md` (Page Creation Discipline section). Name the parent hub and check the four split triggers (multi-hub reference / canonical framework / independent cadence / 200+ lines). If none hit, fold the content into the parent hub as a subsection and log a `PAGE_DECISION action=fold` entry with a promote-back trigger. If one hits, split and log `PAGE_DECISION action=split` with the trigger name. This check is the difference between a compounding wiki and one that slowly fragments into lightly-linked single-use pages.
+- **Never leave a named person unrecorded.** When the sync names a person reachable by neither route (no `type: person` entity, not in any `people:` list), either create the entity page if the fold gate says split, or add them to the `people:` list of the page they were folded into and say so in the `PAGE_DECISION` line (`people="Full Name"`). If they are already reachable, add nothing: a second record is the same defect in the other direction.
 
 ## Step 5: Cross-link
 

@@ -54,6 +54,17 @@ Organize pages into these default categories (customizable in `.env`):
 | `synthesis/` | Cross-cutting analysis across sources | `synthesis/scaling-laws-debate.md` |
 | `journal/` | Timestamped observations, session logs | `journal/2024-03-15.md` |
 
+### Entity pages: `type:` and `people:`
+
+`entities/` holds people and non-people side by side, and the folder cannot tell them apart, so two frontmatter keys do. They are keys, not tags: the type axis never goes in `tags:` (the vault's `_meta/taxonomy.md` states the rule), and a `person` tag is a retired form.
+
+| Key | Where | Values | Meaning |
+|---|---|---|---|
+| `type:` | every `entities/` page, required | `person`, `self`, `organization`, `tool`, `device` | What kind of entity this is. `self` is the vault owner, on exactly one page, never someone else's contact. |
+| `people:` | any page, optional | `[Full Name, Full Name]` | This page is the **primary source** for these people, who have no entity page of their own. Not everyone the page mentions. |
+
+A person is recorded by exactly one route: a `type: person` entity page, or one `people:` entry on the page that is their primary source. A name that appears on six pages belongs in `people:` on one of them. Consumers that index people (a contact sync, a meeting-prep brief) read both routes and nothing else, so a person on neither route does not exist to them.
+
 ### Projects
 
 Knowledge often belongs to a specific project. The `projects/` directory mirrors this:
@@ -173,13 +184,15 @@ This discipline is anti-default, not anti-page. Pages that earn their keep pass 
 
 3. **If no trigger hits, fold.** Add the content as a subsection of the parent hub. Record a **promote-back trigger** — the specific condition under which the fold would be reversed (e.g., "if this pattern applies to Rubrica or SiteProof too, extract to `concepts/`"). The promote-back trigger goes in the log so a future ingest can revisit the decision.
 
-4. **If a trigger hits, split.** Create the sibling page, link it from the parent, and note which trigger justified it in the log.
+3a. **If the folded content is about a person, add them to the parent's `people:` list** and name them in the `PAGE_DECISION` line (`people="Full Name"`). Folding decides page count; it must not lose the person. A folded person with no `people:` entry is invisible to every consumer that indexes by person, and nothing in the log says it happened. Skip the entry only when the person already has a `type: person` page or already sits in another page's `people:` list; a second record is the same defect in the other direction.
+
+4. **If a trigger hits, split.** Create the sibling page, link it from the parent, and note which trigger justified it in the log. If the page is about a person, it carries `type: person`.
 
 ### Log format
 
 Append to `log.md` when the call is made:
 
-- Fold: `PAGE_DECISION action=fold content="<brief>" parent=<hub> promote_back_trigger="<condition>"`
+- Fold: `PAGE_DECISION action=fold content="<brief>" parent=<hub> promote_back_trigger="<condition>"`, plus `people="<Full Name; Full Name>"` when step 3a added anyone
 - Split: `PAGE_DECISION action=split content="<brief>" parent=<hub> trigger=<trigger-name>`
 
 ### Worked example
@@ -188,7 +201,7 @@ During the MBA 253D Assignment 2 ingest (2026-04-19), the full sixteen-stakehold
 
 ## Page Template
 
-When creating a new wiki page, use this structure:
+When creating a new wiki page, use this structure. Entity pages also carry `type:`, and any page that is the primary source for a person carries `people:` (see *Entity pages: `type:` and `people:`* under Wiki Organization):
 
 ```markdown
 ---
