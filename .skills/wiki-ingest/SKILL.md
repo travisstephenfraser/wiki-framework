@@ -23,6 +23,21 @@ You are ingesting source documents into an Obsidian wiki. Your job is not to sum
 1. **Resolve config** — follow the Config Resolution Protocol in `llm-wiki/SKILL.md` (inline `@name` override → walk up CWD for `.env` → `~/.obsidian-wiki/config` → prompt setup). This gives `OBSIDIAN_VAULT_PATH`, `OBSIDIAN_SOURCES_DIR`, `OBSIDIAN_LINK_FORMAT` (default: `wikilink`), and `WIKI_STAGED_WRITES`. Only read the specific variables you need — do not log, echo, or reference any other values from these files.
 2. **Check `WIKI_STAGED_WRITES`** — if set to `true`, all new and updated category pages go to `_staging/<category>/` instead of their final location. Tell the user at the start of the ingest: "Staged writes mode is enabled — pages will land in `_staging/` for your review. Run `/wiki-stage-commit` when ready to promote."
 3. Read `.manifest.json` at the vault root to check what's already been ingested
+3a. **Pre-flight: check that every archived draft was actually recorded.** If
+   `<vault>/_meta/check_archived_recorded.py` exists, run
+   `python3 <vault>/_meta/check_archived_recorded.py <vault>` before ingesting anything.
+   Exit 0 = clean, proceed. Exit 1 = one or more drafts sit in `_raw/_archived/` with no manifest
+   entry; **report them to the user before doing the requested ingest** and offer to resolve them.
+   Exit 2 = the check itself is broken (see its degeneracy note); say so, do not treat it as clean.
+   Why this exists: the archive move in Raw Mode below is the only thing that removes a draft from
+   the next scan, and the manifest write is a separate later step (Step 7), so a missed record is
+   permanent and silent — `_raw/*` is gitignored, so there is no git trace either. On 2026-09-05
+   this had swallowed five drafts, three of which had never reached a page at all. If the script is
+   absent, do the same check inline: every file in `_raw/_archived/` should appear as a manifest key
+   (match on basename — keys use several historical path forms).
+   **A draft with no entry is not automatically missing content.** It is either promoted-but-
+   unrecorded or never promoted, and the two look identical from the outside. Tell them apart by
+   grepping the vault for the draft's own distinctive strings; do not assume either answer.
 4. Read `index.md` to understand current wiki content
 5. Read `log.md` to understand recent activity
 
@@ -89,6 +104,12 @@ This keeps faith with the "immutable raw layer" principle in `llm-wiki/SKILL.md`
   `"agent:<capture_source> <sources-value>"` — e.g. `"agent:claude-session obsidian-wiki session (2026-05-29)"`
 - If the file has only `sources:`, copy those entries verbatim.
 - Only fall back to the `_raw/` filename if the file has no `sources:` or `capture_source` fields at all.
+
+**Record before you archive.** Write the source's `.manifest.json` entry (Step 7) *before* moving
+the file into `_raw/_archived/`, not after. The move is what removes the draft from every future
+scan, so it must be the last thing that happens to a promoted draft — if the record is missing, an
+un-archived file at the top of `_raw/` is a self-correcting mistake (it gets picked up next run),
+while an archived one is a silent permanent loss. Order: promote → record → archive.
 
 **Move safety:** Only move the specific file that was just promoted. Before moving, verify the resolved path is inside `$OBSIDIAN_VAULT_PATH/_raw/` — never touch files outside this directory. Never use wildcards or recursive operations (`rm -rf`, `mv *`). Move one file at a time by its exact path into `_raw/_archived/`, preserving its filename. If a file of the same name already exists there, append a numeric suffix rather than overwriting.
 
