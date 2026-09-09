@@ -43,6 +43,26 @@ page_name → { path, title, aliases, tags, summary }
 
 This is your "vocabulary" — every entry in this table is a valid wikilink target.
 
+### Navigation artifacts are not graph nodes
+
+When you compute anything from the **link graph** — page degree, the peripheral→hub signal in
+Step 3, or any reachability / shared-neighbour check used to judge whether two pages are *already*
+connected — build that graph from **content pages only**. Exclude `index.md`, `log.md` and `hot.md`
+as both nodes and connectors.
+
+They are navigation and bookkeeping surfaces, not knowledge. `index.md` links essentially every page
+in the vault, which by itself makes the vault's diameter 2 and makes "these two are already
+connected" true for every pair you could ask about. Applying a degree threshold afterwards only
+papers over this — and a threshold tuned on the result it justifies is its own measurement problem.
+Exclude them at construction instead. ^[inferred]
+
+**Carve-out: this does not change orphan counting.** The orphan report in Step 6 keeps whatever
+convention it already uses. Dropping `index.md` from the *source* side of an orphan check is exactly
+the error that once produced a "70 of 74 pages orphaned" LINT entry in this vault when the true count
+was 0. Which count to report is a genuinely open decision, recorded in `cross-link-detector-traps`
+(trap 5) and `wiki-maintenance-protocol`. Scope this exclusion to graph-topology *signals*, and state
+in the report which convention the orphan number uses.
+
 ## Step 2: Scan for Missing Links
 
 For each page in the vault:
@@ -243,8 +263,18 @@ To promote: move the page to `projects/<project-name>/references/` and update al
 
 Append to `log.md`:
 ```
-- [TIMESTAMP] CROSS_LINK pages_scanned=N links_added=M typed_relations_written=T pages_modified=P orphans_remaining=Q misc_affinity_updated=R promotion_candidates=S
+- [TIMESTAMP] CROSS_LINK pages_scanned=N links_added=M typed_relations_written=T pages_modified=P orphans_remaining=Q misc_affinity_updated=R promotion_candidates=S tag_pairs_shortlisted=X tag_pairs_reviewed=Y tag_links_written=Z
 ```
+
+The three `tag_*` counters are instrumentation, not decoration. **Record them every run even when
+the answer is zero.** How much the shared-tag signal is actually worth is currently supported by a
+single observation (2026-09-09: 14 pairs shortlisted, 14 reviewed, 1 written by that run's own
+triage — while an independent content re-read of the same 14 judged 5 clearly worth linking and 3
+borderline). One run is not enough to re-weight the signal, an earlier pass reached the opposite
+conclusion, and the two triage methods tried so far disagreed in both directions: the Step 3 score
+applied 8 of the 14 at ~38% precision, the graph-reachability triage applied 1 at 20% recall.
+**Do not change the shared-tag `+2` in Step 3 on the strength of one run's impression** — let these
+counters accumulate across several runs first. ^[extracted]
 
 **`hot.md`** — Read `$OBSIDIAN_VAULT_PATH/hot.md` (create from the template in `wiki-ingest` if missing). Update **Recent Activity** with a one-line summary of what was linked — e.g. "Cross-linked 23 mentions across 12 pages; 2 orphans remain." Keep the last 3 operations. Update `updated` timestamp.
 
