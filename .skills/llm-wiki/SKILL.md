@@ -344,7 +344,11 @@ provenance:
   ambiguous: 0.03
 ```
 
-These are best-effort numbers written by the ingest skill at create/update time. `wiki-lint` recomputes them and flags drift **only on densely marked pages** (≥10 inline markers; pages with a `provenance:` block but no inline markers are exempt — see wiki-lint Check 7). The block is optional — pages without it are treated as fully extracted by convention.
+These are best-effort numbers written by the ingest skill at create/update time. The block is optional — pages without it are treated as fully extracted by convention.
+
+> **`wiki-lint` no longer drift-checks these values (retired 2026-09-09).** The former rule flagged any field more than 0.20 from a marker-based recompute, gated on density (≥10 inline markers, later a ≥0.60 ratio). It was retired because a *holistic write-time judgment* and a *marker count* are different populations, so the comparison was one-directional by construction. See wiki-lint Check 7, "Retired: the drift rule", for the evidence and the reversal criterion.
+
+**Denominator, unresolved.** The comment above says *sentences/bullets*, which matches upstream. `wiki-lint` currently counts **bullets only**. The two differ by roughly 5× on real pages. Until one definition wins, a `provenance:` block is a declared estimate, not a measured one — write it as an honest holistic judgment and do not attempt to match it to any recompute.
 
 ## Typed Relationships
 

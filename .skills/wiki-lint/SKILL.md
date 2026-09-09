@@ -44,14 +44,23 @@ Find pages with zero incoming wikilinks. These are knowledge islands that nothin
 Find `[[wikilinks]]` that point to pages that don't exist.
 
 **How to check:**
-- Grep for `\[\[.*?\]\]` across all pages
-- Extract the link targets
-- Check if a corresponding `.md` file exists
+- **Mask code first.** Blank fenced blocks (```` ``` ````/`~~~`) and inline code spans in the page **body** before extracting anything. A wikilink inside backticks is an *illustration of the syntax, not a reference to a page* — Obsidian does not render it as a link either. Skipping this mints a broken link every time a page documents wikilink syntax: it happened three times in one session on 2026-08-29, including inside the page describing the fix. **Do not mask frontmatter** — `relationships:` targets live there and are real typed edges that must keep resolving. Strip fences *before* inline spans, so a fenced block containing stray backticks cannot leave an unbalanced span behind. (Fork policy, commit `d633ed7`; implemented in `lint.py::_strip_code`.)
+- Grep the masked text for `\[\[.*?\]\]` across all pages
+- Extract the link target: drop everything from the first `|` (alias) or `#` (heading/block anchor), and **unescape a table-escaped `\|` before splitting** — `[[page\|Alias]]` must yield `page`, never `page\`
+- Skip a target whose extension is an attachment type (`.png`, `.jpg`, `.gif`, `.svg`, `.webp`, `.pdf`, `.canvas`, `.base`, audio and video): it is an embed, not a page link, and has no entry in the `.md` inventory this check compares against
+- Do **not** treat every dot as an extension — `[[Node.js]]`, `[[Next.js]]`, and `[[v1.2 release notes]]` are page links whose names happen to contain a dot, and dropping them would both miss real broken links and make the target page look like an orphan
+- Strip an explicit `.md` suffix from what remains, then check if a corresponding `.md` file exists
+- **Nested-bracket edge case:** a wikilink inside an inline footnote reads `^[[[page#heading|text]]]` — three opening brackets in a row. A greedy `[[...]]` match swallows the leading `^[` and yields a bogus target. Match the *innermost* `[[...]]` pair. Live example: `projects/strava-pm/skills/pm-casing-framework.md`.
+
+**Why this recipe is this specific:** the earlier three-line version ("extract the link targets, check a `.md` exists") is not merely noisy — Consolidate Action 1 consumes this check's output and used to rewrite what it found. Measured on a 247-page vault, the naive recipe flags **597** links as broken where **2** are genuine: 530 plain aliases, 114 heading anchors, 8 table-escaped pipes. Upstream fixed the same defect in PR #206 for exactly this reason.
+
+**Cross-check (optional):** `python3 -m obsidian_wiki lint <vault> --json` implements this recipe in code (`_WIKILINK_RE`, `_normalise_node_id`, `_strip_code`) and is the faster path on a large vault. **One divergence to know:** `lint.py` skips `_meta/`, so a link whose target lives there (e.g. `[[machine-parity]]` → `_meta/machine-parity.md`) is reported broken by the CLI but is not broken. The prose recipe above globs every page and is correct on those. Reconcile in favour of the prose.
 
 **How to fix:**
 - If the target was renamed, update the link
 - If the target should exist, create it
 - If the link is wrong, remove or correct it
+- **Never convert a link to plain text just because it did not resolve** — see Consolidate Action 1. A broken link that stays visible gets fixed on a later pass; a silently unlinked one does not.
 
 ### 3. Missing Frontmatter
 
@@ -106,37 +115,90 @@ Verify `index.md` matches the actual page inventory.
 - Check that summaries in `index.md` still match page content
 - **Project-hub exemption:** a page is considered indexed if it appears in `index.md` OR is wikilinked from its project hub page (`projects/<name>/<name>.md`). Project-scoped pages deliberately stay off the root index and live on their hub — do not flag them as missing, and never "fix" by bulk-adding hub-listed pages to `index.md`. Only flag pages reachable from neither the index nor any hub.
 
-### 7. Provenance Drift
+### 7. Provenance Honesty
 
 Check whether pages are being honest about how much of their content is inferred vs extracted. See the Provenance Markers section in `llm-wiki` for the convention.
 
+> **Heading renamed and the numeric drift rule retired, 2026-09-09.** Upstream still ships both as "Provenance Drift". This is a deliberate fork divergence and a **trap patch** — a merge that restores the drift rule reintroduces a measurement known to be defective on this vault. Evidence, and the criterion for reversing this, are in "Retired: the drift rule" at the end of this check.
+
 **How to check:**
+
 - For each page with a `provenance:` block or any `^[inferred]`/`^[ambiguous]` markers, count **claim units** and how many carry each marker
 - **Claim unit** = one bullet (`-`/`*`) or numbered list item. It is *not* a non-blank line. Using lines as the denominator silently inflates `extracted`, because prose paragraphs, headings, table rows, and code lines all land in the denominator while only bullets typically carry markers. On a real page this read 0.05 inferred by line vs 0.21 by claim unit — a 4× understatement, entirely an artifact of the denominator.
+
+  **⚠ This definition is under review and is the fork's outlier.** Upstream `wiki-lint` and this fork's own write-side spec (`llm-wiki`, Provenance Markers) both say *sentences/bullets*; only this file says bullets-only. The two definitions differ by roughly **5×** on real pages, which is enough to move every threshold below. Until that is resolved, treat any fraction this check produces as denominator-dependent and **do not tune a threshold against it**. Whichever definition wins, record it in the LINT log line (see Instrumentation).
+
+- **Exclude markers inside code from the numerator.** Blank fenced blocks and inline code spans in the body before counting, exactly as Check 2 does. Otherwise the page that *defines* these markers reads as maximally synthetic, because the check is counting its own vocabulary — the measurement reading its own inputs. (Measured 2026-09-09: 2 pages, 3 markers. Small in aggregate, but it lands precisely on the pages documenting the instrument, which is where a self-reading measurement does the most damage.)
 - Compute rough fractions (`extracted`, `inferred`, `ambiguous`)
+- **Run the boundedness assertions below before reporting any fraction.**
 - Apply these thresholds:
   - **AMBIGUOUS > 15%**: flag as "speculation-heavy" — even 1-in-7 claims being genuinely uncertain is a signal the page needs tighter sourcing or should be moved to `synthesis/`
   - **INFERRED > 40% with no `sources:` in frontmatter**: flag as "unsourced synthesis" — the page is making connections but has nothing to cite
   - **Hub pages** (top 10 by incoming wikilink count) with INFERRED > 20%: flag as "high-traffic page with questionable provenance" — errors on hub pages propagate to every page that links to them
-  - **Drift**: if the page has a `provenance:` frontmatter block, flag it when any field is more than 0.20 off from the recomputed value
 - **Skip** pages with no `provenance:` frontmatter and no markers — treated as fully extracted by convention
-- **YAML-provenance exemption**: pages that have a `provenance:` frontmatter block but **zero inline markers** in the body (common for `synthesis/` and `concepts/` pages, where provenance was declared at write time rather than marked per-sentence) are exempt from the drift recompute. Recomputing from a marker-free body always yields "100% extracted" and would mis-flag the honest declared values — and the drift "fix" would then overwrite them. Only run the drift check when inline markers exist to recompute from.
 - **Marker grammar**: match markers by prefix, not exact literal — `^[inferred` covers `^[inferred]` and long-form variants like `^[inferred from X]`; `^[ambiguous` likewise. Explicit extracted marks (`^[extracted]`, `^[stated directly]`) count as marked-extracted claims, not as unmarked.
-- **Density gate**: run the drift recompute only on pages where **`markers / claim_units ≥ 0.60`**, *and* there are at least 5 markers in absolute terms (the floor stops a 3-bullet page qualifying on 2 markers). Below that density, sparse marking cannot estimate the page's true fractions — an honest holistic declaration (e.g. extracted=0.6) recomputes as "mostly extracted" simply because most claims are unmarked, mass-flagging pages that aren't drifting. For sparsely-marked pages, treat the declared `provenance:` block as authoritative. Free-text (non-numeric) `provenance:` values have nothing to drift against — skip them.
 
-  **The gate must be a ratio, not a count.** An absolute threshold does not scale with page length: a 181-line page carrying 12 markers is a density of 0.066 — far too sparse to estimate anything — yet it clears a "≥10 markers" bar. Measured on this vault (2026-08-13, 200 content pages): the absolute gate admitted 25 pages and **every one of them drifted on the same field in the same direction**; the ratio gate admits 27 and flags 7, split 18-high/8-low. Same vault, same day — the count-based gate was manufacturing false positives, not detecting drift.
+#### Boundedness assertions (required — raise, do not warn)
 
-- **Residual bias — widen tolerance, don't chase it to zero**: even at correct density the comparison is not symmetric. The declared block is a *holistic judgment over claims* made at write time; the recompute *counts inline markers and scores every unmarked unit as extracted*. Those are different quantities, so recomputed-extracted runs systematically higher (measured 18-high vs 8-low on the qualifying pages). Treat the 0.20 drift tolerance as a floor, and never treat divergence alone as proof the page is wrong.
+A fraction outside [0,1] is not a finding about a page, it is proof the instrument is broken. Check all three **before** any number reaches the report. On failure, **raise and suppress that page's fractions**; never round, clamp, or print the impossible value.
 
-- **Known calibration state (measured 2026-08-13/15, this vault)**: declared `extracted` runs a systematic **~0.13 low** against any marker-based recompute (mean absolute error 0.126 vs the documented "fraction with no marker" definition, 0.125 vs a marked-claims-only definition — statistically indistinguishable, i.e. the write skills follow *neither* definition and emit holistic estimates). A 0.20 tolerance therefore clips the tail of a systematic offset rather than detecting per-page drift, and the survivors are one-directional by construction. **Expect the degeneracy assertion below to fire on the drift rule until the write side is aligned.** That is the correct outcome, not a bug: the drift rule currently yields no trustworthy per-page finding on this vault. The threshold rules above it (ambiguous > 15%, unsourced synthesis, hub pages) are unaffected and remain live. The real repair is upstream — make the ingest skills compute `provenance:` by the same rule lint recomputes it, or drop the numeric block in favour of inline markers alone.
+1. **`claim_units > 0` before dividing.** A page with markers and zero claim units is a divide-by-zero, not a 100%-anything page. Report it as a measurement failure naming the page.
+2. **`markers <= claim_units`.** If a page carries more markers than the denominator has units, the denominator does not contain the numerator's population. That is a unit mismatch, and no tolerance value repairs a unit mismatch.
+3. **`0 <= fraction <= 1`** for every computed fraction on every page.
 
-- **Degeneracy assertion (required)**: after computing drift findings, check the direction split. If **every** flagged page — or all but one — drifts on the same field in the same direction, **the measurement is broken; report that and suppress the page list.** A real drift population is mixed. A one-directional sweep means the estimator is reading its own denominator, marker convention, or gate, not the pages. This check costs one comparison and is the difference between reporting one defect and filing 25 false ones.
+**Expect assertion 2 to fire today, and expect that to be correct.** Measured 2026-09-09 on 247 content pages: **18 pages carry more markers than bullets**, because this vault's house style puts markers on prose paragraphs. The assertion is not a bug report about those pages, it is the bullets-only denominator refusing to produce a number it cannot justify. It clears when the denominator question is settled — not before, and not by loosening the assertion.
+
+#### Known-answer fixture (required)
+
+Assertions that only ever pass prove nothing. Per `guards-that-do-not-guard`, every absence assertion needs a presence one, so this check carries pages that must go **red** and a page that must go **green**. Anchor on the *property*, not on the counts — these pages are live and their marker counts move.
+
+| anchor | property | must |
+|---|---|---|
+| `projects/cs160-prog1/cs160-prog1.md` | markers present, **zero** bullets | **RAISE** assertion 1 (divide-by-zero) |
+| `skills/cross-link-detector-traps.md` | markers **exceed** bullets | **RAISE** assertion 2 (unit mismatch) |
+| `references/macos-migration.md` | markers ≤ bullets, all fractions in range | **PASS** — fractions reported, nothing raised |
+
+If all three pass, or all three raise, the fixture is not discriminating and the check is untrustworthy regardless of what it reported. Reference values measured 2026-09-09 under the bullets denominator, recorded so fixture drift is visible rather than silent: cs160-prog1 = 6 markers / 0 bullets; cross-link-detector-traps = 24 markers / 5 bullets; macos-migration = 6 markers / 6 bullets, inferred 0.500, ambiguous 0.000.
+
+#### Degeneracy assertion (required)
+
+After computing findings, check the direction split. If **every** flagged page — or all but one — moves on the same field in the same direction, **the measurement is broken; report that and suppress the page list.** A real population is mixed. A one-directional sweep means the estimator is reading its own denominator, marker convention, or gate, not the pages. This costs one comparison and is the difference between reporting one defect and filing 25 false ones. (Fork-local; no upstream equivalent. Also relied on by Check 8 and by `cross-linker` — do not delete it with the drift rule.)
+
+#### Retired: the drift rule (2026-09-09)
+
+The rule "flag any `provenance:` field more than 0.20 off the recomputed value" is **deleted**, along with its density gate, its residual-bias tolerance, and its How-to-fix. Retired, not repaired.
+
+Why, kept because the evidence is the reversal criterion:
+
+| measure | value |
+|---|---|
+| LINT runs recording `prov_issues` | 21 |
+| page edits ever attributable to provenance drift | **1** (2026-04-18, predates the current marker spec) |
+| pages admitted by the ratio gate on the current vault | 41 of 247 (2026-09-09) |
+| standing state per this skill's own former text | "expect the degeneracy assertion to fire" |
+
+Every run since 2026-05-14 resolved to a statement about the instrument rather than about a page: *"dismissed as noise, denominator too small"*, *"20 recompute hits dismissed as documented sparse-marking false-positive class"*, *"CHECK 7 IS DEFECTIVE AS SPECIFIED"*, and finally *"recomputed to −0.20 extracted, impossible."* A rule whose only possible output is "the instrument is broken" is not a quiet guard; it is a permanently red light with an empty action list, across five months.
+
+The structural reason it cannot work: it differences a **holistic write-time judgment** against a **marker count**. Those are different populations — `measurement-universe-mismatch` by name — and no tolerance value repairs a unit mismatch. Measured 2026-08-13/15: declared `extracted` runs a systematic **~0.13 low** against any marker-based recompute (mean absolute error 0.126 against the documented "fraction with no marker" definition, 0.125 against a marked-claims-only definition — statistically indistinguishable, i.e. the write skills follow *neither* documented definition and emit holistic estimates). A 0.20 tolerance clips the tail of a systematic offset rather than detecting per-page drift, so survivors are one-directional by construction.
+
+Two lessons worth keeping even though the rule is gone. **A density gate must be a ratio, not a count**: an absolute threshold does not scale with page length, and on 2026-08-13 the count gate admitted 25 pages of which every one drifted the same way, while the ratio gate admitted 27 and split 18-high/8-low. **Never auto-overwrite a declaration with an estimate**: writing the recompute over the declared block destroys the better number and makes the page self-consistent with a defective measure, so the finding disappears on the next run for the wrong reason.
+
+**Reversal criterion (pre-registered).** Reinstate a drift comparison only when the write side and the lint side compute `provenance:` by the *same* documented rule, and a run demonstrates a mixed-direction flagged population. Absent both, it stays retired.
 
 **How to fix:**
 - For ambiguous-heavy: re-ingest from sources, resolve the uncertain claims, or split speculative content into a `synthesis/` page
 - For unsourced synthesis: add `sources:` to frontmatter or clearly label the page as synthesis
 - For hub pages with INFERRED > 20%: prioritize for re-ingestion — errors here have the widest blast radius
-- For drift: **do not auto-overwrite `provenance:` with the recomputed values.** The recompute is a biased estimator (see Residual bias above) and the declared block is a human/ingest judgment over claims — writing the estimate over the declaration destroys the better number and makes the page self-consistent with a defective measure, so the drift disappears on the next lint for the wrong reason. Instead: surface the page, re-read the marked claims, and correct *either* side by hand — add the missing inline markers if the body under-marks, or amend the declaration if it was wrong. Only a page that failed the degeneracy assertion's direction check is even a candidate.
+- For a raised boundedness assertion: **fix the instrument, not the page.** The page is not wrong; the count is. Resolve the denominator question first.
+
+#### Instrumentation (record on every run)
+
+Add to the `LINT` log line, so the next person to argue about the denominator has more than one run to argue from:
+
+- `prov_units_definition=` — `bullets` or `sentences+bullets`. Which denominator this run used.
+- `prov_pages_gated=` — pages skipped by the no-block/no-marker skip rule.
+- `prov_assert_raised=` — how many boundedness assertions fired.
+- `prov_over_unity=` — pages where `markers > claim_units`. This is the number that decides the denominator question; log it every run, unconditionally, even when it is zero.
 
 ### 8. Fragmented Tag Clusters
 
@@ -359,6 +421,7 @@ Validate `relationships:` frontmatter blocks. Skip pages that have no `relations
 - For each entry in the block:
   1. **Type validation** — flag any `type:` value not in the allowed set above
   2. **Broken target** — strip `[[` and `]]` from the `target:` string, normalize (lowercase, spaces→hyphens, strip `.md`), and check whether a `.md` file at that path exists in the vault. Flag unresolved targets.
+     Before normalizing, drop everything from the first `|` (alias) or `#` (heading/block anchor), unescaping a table-escaped `\|` first: a pipe-aliased or heading-anchored target is not broken just because the literal bracket contents do not match a filename. (Ported from upstream PR #206.)
   3. **Self-reference** — flag any entry where the resolved target equals the page's own node id
 
 **How to fix:**
@@ -454,7 +517,7 @@ Report findings as a structured list:
 
 ### Provenance Issues (N found)
 - `concepts/scaling.md` — AMBIGUOUS > 15%: 22% of claims are ambiguous (re-source or move to synthesis/)
-- `entities/some-tool.md` — drift: frontmatter says inferred=0.10, recomputed=0.45
+- `projects/some-project/some-project.md` — ⚠ MEASUREMENT: 6 markers, 0 claim units — cannot divide, fractions suppressed (assertion 1)
 - `concepts/transformers.md` — hub page (31 incoming links) with INFERRED=28%: errors here propagate widely
 - `synthesis/speculation.md` — unsourced synthesis: no `sources:` field, 55% inferred
 
@@ -495,7 +558,7 @@ Concept pairs that co-occur frequently but have no synthesis page:
 
 Append to `log.md`:
 ```
-- [TIMESTAMP] LINT issues_found=N orphans=X broken_links=Y stale=Z contradictions=W prov_issues=P missing_summary=S fragmented_clusters=F visibility_issues=V promotion_candidates=C synthesis_gaps=G relationship_issues=R
+- [TIMESTAMP] LINT issues_found=N orphans=X broken_links=Y stale=Z contradictions=W prov_issues=P missing_summary=S fragmented_clusters=F visibility_issues=V promotion_candidates=C synthesis_gaps=G relationship_issues=R prov_units_definition=U prov_pages_gated=GP prov_assert_raised=AR prov_over_unity=OU
 ```
 
 Offer to fix issues automatically or let the user decide which to address.
@@ -523,7 +586,7 @@ Triggered by `wiki-lint --consolidate`. Switches from report-only to **act-and-r
 For each broken `[[Target]]` found in Check 2:
 - Search the vault for a page whose title or filename is the closest fuzzy match (use `Grep` across `index.md` titles)
 - If a unique best match exists (edit distance ≤ 2 characters or same root word): rewrite the link. Note the rewrite: `[[Oringal]] → [[corrected-page]]`.
-- If no match or ambiguous: convert to plain text (`~~[[Target]]~~` → `Target`) and add a comment `<!-- broken link: no match found -->`.
+- If no match or ambiguous: **leave the link exactly as it is and report it.** Do **not** convert it to plain text. This branch is non-negotiable: the destructive version has no upside, and Check 2 has been wrong before — under the pre-2026-09-09 recipe it flagged 597 links on a 247-page vault where 2 were genuine, so "no match" was overwhelmingly evidence about the checker, not the link. A broken link that stays visible gets fixed on a later pass; a silently unlinked one is unrecoverable without git archaeology. You may add `<!-- broken link: no match found -->` beside it, but never touch the `[[...]]` itself.
 - Never create a new page just to satisfy a broken link.
 
 #### Action 2: Add missing cross-references for orphans
