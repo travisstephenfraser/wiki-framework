@@ -209,7 +209,7 @@ For each impacted project, create/update `projects/<name>/<name>.md`.
   - Durable fact from the session. <!-- source: pi:2026-06-01T120000_abcd.jsonl#entry-123 -->
   ```
   Multiple sources are comma-separated. These comments are the audit trail; do not omit them for extracted claims.
-- Add/update `provenance:` frontmatter mix for each changed page.
+- Do **not** write a numeric `provenance:` block (`extracted`/`inferred`/`ambiguous` fractions). Fork decision 2026-09-09: the inline markers are the provenance record and the numeric summary was dropped vault-wide (see wiki-lint Check 7). Upstream templates still emit it — do not restore it on a merge.
 
 **Mark provenance** per the convention in `llm-wiki`:
 - `compaction` and `branch_summary` entries are pre-distilled — treat as mostly extracted, with source reference comments.

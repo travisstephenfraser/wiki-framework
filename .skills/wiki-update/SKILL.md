@@ -113,10 +113,6 @@ tags: [tag1, tag2]
 sources: [projects/<project-name>]
 summary: >-
     One or two sentences (≤200 chars) describing what this page covers.
-provenance:
-  extracted: 0.6
-  inferred: 0.35
-  ambiguous: 0.05
 base_confidence: 0.59
 lifecycle: draft
 lifecycle_changed: TIMESTAMP_DATE
@@ -147,7 +143,7 @@ Use [[wikilinks]] to connect to other pages.
 - **Inferred** — *why* a decision was made, design rationale, trade-offs, "the team chose X because Y" — unless a commit message, doc, or ADR states it explicitly.
 - **Ambiguous** — when the code and docs disagree, or when there's clearly an in-progress migration with two patterns living side by side.
 
-Compute the rough fractions and write the `provenance:` block on every new/updated page.
+Do **not** write a numeric `provenance:` block (`extracted`/`inferred`/`ambiguous` fractions). Fork decision 2026-09-09: the inline markers are the provenance record and the numeric summary was dropped vault-wide (see wiki-lint Check 7). Upstream templates still emit it — do not restore it on a merge.
 
 ### Updating vs creating
 

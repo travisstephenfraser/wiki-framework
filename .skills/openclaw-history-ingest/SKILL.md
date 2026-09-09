@@ -168,7 +168,7 @@ For each impacted project, create/update `projects/<name>/<name>.md`.
   - `^[extracted]` when directly grounded in explicit session/memory content
   - `^[inferred]` when synthesizing patterns across multiple sessions
   - `^[ambiguous]` when sessions conflict
-- Add/update `provenance:` frontmatter mix for each changed page
+- Do **not** write a numeric `provenance:` block (`extracted`/`inferred`/`ambiguous` fractions). Fork decision 2026-09-09: the inline markers are the provenance record and the numeric summary was dropped vault-wide (see wiki-lint Check 7). Upstream templates still emit it — do not restore it on a merge.
 
 ## Step 7: Update Manifest, Log, and Index
 

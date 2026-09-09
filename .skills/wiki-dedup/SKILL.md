@@ -175,7 +175,7 @@ Read both pages. Update the canonical page:
 - **`updated`** — set to now
 - **`summary:`** — rewrite to cover the merged scope if the secondary page added new ground
 - **Body content** — merge unique sections and bullets from the secondary page. Do not blindly append — integrate the content. Avoid duplicating claims already present in the canonical page. Use `^[inferred]` markers where synthesis is needed.
-- **`provenance:`** — recompute after merging
+- **`provenance:`** — if either page carries a *narrative* `provenance:` line, keep the more informative one; never write a numeric block (fork decision 2026-09-09)
 
 ### 5c: Write a redirect stub at the secondary page path
 

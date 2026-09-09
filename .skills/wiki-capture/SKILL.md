@@ -132,10 +132,6 @@ created: <ISO-8601 timestamp>
 updated: <ISO-8601 timestamp>
 summary: >-
   <1-2 sentences, ≤200 chars, answering "what knowledge does this page hold?">
-provenance:
-  extracted: 0.X
-  inferred: 0.X
-  ambiguous: 0.X
 base_confidence: 0.42
 lifecycle: draft
 lifecycle_changed: <ISO date today>
@@ -252,7 +248,7 @@ Type: synthesis
 
 - [ ] Content rewritten as declarative knowledge (not a chat transcript)
 - [ ] Type classified correctly; target path is in the right folder
-- [ ] Frontmatter complete with title, category, tags, sources, summary, provenance
+- [ ] Frontmatter complete with title, category, tags, sources, summary (no numeric `provenance:` block — fork decision 2026-09-09)
 - [ ] At least 2 wikilinks to existing pages
 - [ ] `index.md`, `log.md`, and `hot.md` updated
 - [ ] Confirmed save path to user

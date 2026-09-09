@@ -214,10 +214,6 @@ relationships:
     type: extends
 sources: [papers/attention.pdf]
 summary: One or two sentences, ≤200 chars, so a reader (or another skill) can preview this page without opening it.
-provenance:
-  extracted: 0.72
-  inferred: 0.25
-  ambiguous: 0.03
 base_confidence: 0.65
 lifecycle: draft
 lifecycle_changed: 2024-03-15
@@ -335,20 +331,11 @@ Example:
 - Inline (suffix) so a single bullet stays a single bullet.
 - Default = extracted means existing pages without markers stay valid.
 
-**Frontmatter summary:** Optionally surface the rough mix at the page level so the user can scan for speculation-heavy pages without reading them:
-
-```yaml
-provenance:
-  extracted: 0.72   # rough fraction of blocks (paragraphs, list items, table rows) with no marker
-  inferred: 0.25
-  ambiguous: 0.03
-```
-
-These are best-effort numbers written by the ingest skill at create/update time. The block is optional — pages without it are treated as fully extracted by convention.
+**Frontmatter summary: retired in this fork (2026-09-09).** Upstream optionally surfaces the mix as a numeric `provenance:` block (`extracted`/`inferred`/`ambiguous`). This fork dropped it from all 213 pages that carried it and its write skills no longer emit it. Nothing read it once the drift check was retired, and the values were holistic guesses: the hand-countable anchor page declared 0.7 inferred where the page counts 0.21. The inline markers are the record; `wiki-lint` Check 7 computes any fraction it needs from them at lint time. A *narrative* `provenance:` line ("extracted from X memory files") is still fine where it adds what `sources:` does not. **Trap patch: do not restore the numeric block or these templates on an upstream merge.**
 
 > **`wiki-lint` no longer drift-checks these values (retired 2026-09-09).** The former rule flagged any field more than 0.20 from a marker-based recompute, gated on density (≥10 inline markers, later a ≥0.60 ratio). It was retired because a *holistic write-time judgment* and a *marker count* are different populations, so the comparison was one-directional by construction. See wiki-lint Check 7, "Retired: the drift rule", for the evidence and the reversal criterion.
 
-**Denominator, decided 2026-09-09.** A claim unit is a *block*: a list item, a prose paragraph, a table data row, or a blockquote paragraph, classified by the most uncertain marker it contains. Upstream's comment says *sentences/bullets*; this fork's `wiki-lint` Check 7 records why blocks won (bounded by construction; 95.9 % of markers end a block). When you write this frontmatter, estimate by that rule — but it stays a declared estimate, and nothing drift-checks it.
+**Claim unit, decided 2026-09-09.** When a fraction of claims is needed (wiki-lint Check 7), a claim unit is a *block*: a list item, a prose paragraph, a table row, or a blockquote paragraph, classified by the most uncertain marker it contains. Upstream says *sentences/bullets*; Check 7 records why blocks won (bounded by construction; 95.9 % of markers end a block).
 
 ## Typed Relationships
 

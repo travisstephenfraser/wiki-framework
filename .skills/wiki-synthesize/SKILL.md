@@ -77,10 +77,6 @@ sources: [<all pages that link to both>]
 created: TIMESTAMP
 updated: TIMESTAMP
 summary: "Cross-cutting synthesis of how <A> and <B> interact, with implications for <domain>."
-provenance:
-  extracted: 0.2
-  inferred: 0.7
-  ambiguous: 0.1
 base_confidence: <min(base_confidence of all input pages)>
 lifecycle: draft
 lifecycle_changed: TIMESTAMP_DATE

@@ -432,3 +432,20 @@ F3 is closed: the three withdrawn hub findings are withdrawn on measured values,
 **F7 unchanged.** Task 7 still waits on the concurrent vault writer finishing and committing, and
 on a numeric-only filter with a recount.
 
+---
+
+## PHASE 3 RESOLUTION (2026-09-09, Fable 5.1)
+
+**Task 7 executed.** Fresh census before touching anything: 213 numeric blocks (all the identical
+4-line shape), 30 narrative, 0 odd. Strip asserted as 213 files / 0 insertions / 852 deletions /
+every file exactly 4, narrative count 30 before and after. `updated:` not bumped, so Check 4's
+staleness signal is untouched. Vault commit `e91ceb3`; PROVENANCE_STRIP log line; hot.md entry;
+`_meta/ingest-rules.md` no longer asks for the block.
+
+Framework: template removed from llm-wiki, wiki-capture, wiki-research (×2), wiki-synthesize,
+wiki-update; write instruction replaced in wiki-ingest (×2), wiki-dedup, and the six history-ingest
+skills; Check 7 no longer takes the block as input. Trap patches 1–5 recorded in the
+merge-constraints memory. Tests 248 pass.
+
+**Status: all eight tasks complete.** Spec closed.
+

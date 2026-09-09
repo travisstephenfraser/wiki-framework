@@ -93,10 +93,6 @@ created: <ISO-8601 timestamp>
 updated: <ISO-8601 timestamp>
 summary: >-
   <1-2 sentences describing what this source covers, ≤200 chars>
-provenance:
-  extracted: 0.X
-  inferred: 0.X
-  ambiguous: 0.X
 base_confidence: <0.17 + 0.5 × classify(url) for a single source>
 lifecycle: draft
 lifecycle_changed: <ISO date today>
@@ -134,10 +130,6 @@ created: <ISO-8601 timestamp>
 updated: <ISO-8601 timestamp>
 summary: >-
   Synthesis of <N>-round research on <topic>. Covers <core findings in ≤200 chars>.
-provenance:
-  extracted: 0.X
-  inferred: 0.X
-  ambiguous: 0.X
 base_confidence: <min(N_unique_sources/3,1.0)×0.5 + avg_source_quality×0.5>
 lifecycle: draft
 lifecycle_changed: <ISO date today>   <!-- base_confidence/lifecycle lines: only when WIKI_SCHEMA_PHASE >= 1; omit when 0 -->

@@ -285,7 +285,7 @@ Leave `lifecycle` unchanged on update.
 - **Memory artifacts** are user-authored — treat as extracted.
 - **Conversation turn distillation** is mostly inferred. You're synthesizing a coherent claim from many turns. Apply `^[inferred]` liberally to synthesized patterns, generalizations across sessions, and "what the user really meant" interpretations.
 - Use `^[ambiguous]` when the user changed direction mid-session or when the session ended unresolved.
-- Write a `provenance:` frontmatter block on every new/updated page summarizing the rough mix.
+- Do **not** write a numeric `provenance:` block (`extracted`/`inferred`/`ambiguous` fractions). Fork decision 2026-09-09: the inline markers are the provenance record and the numeric summary was dropped vault-wide (see wiki-lint Check 7). Upstream templates still emit it — do not restore it on a merge.
 
 ## Step 6: Update Manifest, Journal, and Special Files
 

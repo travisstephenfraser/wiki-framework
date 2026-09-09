@@ -123,7 +123,7 @@ Check whether pages are being honest about how much of their content is inferred
 
 **How to check:**
 
-- For each page with a `provenance:` block or any `^[inferred]`/`^[ambiguous]` markers, count **claim units** and how many carry each marker
+- For each page with any `^[inferred]`/`^[ambiguous]` markers, count **claim units** and how many carry each marker. (The numeric `provenance:` frontmatter block was dropped from the vault on 2026-09-09 and is no longer an input to this check; a page that still has one is a merge leak, not a signal.)
 - **Claim unit = one block.** Decided 2026-09-09 after measurement (record below). Split the body into blocks, in this order:
   1. Remove fenced code blocks (```` ``` ````/`~~~`) entirely — they are not claims.
   2. Split what remains into units: each **list item** (`-`/`*`/`1.`, together with its indented continuation lines), each **prose paragraph** (blank-line separated), each **table row** (header row included — only the `|---|---|` separator is dropped), and each **blockquote paragraph**. Drop headings, blank lines, and table separator rows.
@@ -143,7 +143,7 @@ Check whether pages are being honest about how much of their content is inferred
   - **Hub pages** (top 10 by incoming wikilink count) with INFERRED > 20%: flag as "high-traffic page with questionable provenance" — errors on hub pages propagate to every page that links to them
 
   **Thresholds re-derived under the block definition, 2026-09-09, 194 marked pages.** The values are unchanged because a block is a claim, so "1 in 7 claims" still means what it says; what changed is that the fractions now mean it too. Measured headroom: ambiguous worst 0.077 (`t14`) against 0.15; unsourced inferred worst 0.167 (`m5stack-devkits`) against 0.40; hub inferred worst 0.155 (`independent-measurer-discipline`) against 0.20, with the hub threshold sitting at the vault-wide 90th percentile of `inferred` (p90 = 0.208, median 0.083, max 0.471 on `assistant-content-drift`). Every rule is quiet with real headroom, and every rule would fire on a page one notch worse than the current worst. The three hub findings reported on 2026-09-09 (0.45, 0.42, 0.21 under bullets-only) read 0.155, 0.124, 0.102 here and are withdrawn on that evidence, not by assumption.
-- **Skip** pages with no `provenance:` frontmatter and no markers — treated as fully extracted by convention
+- **Skip** pages with no markers — treated as fully extracted by convention
 - **Marker grammar**: match markers by prefix, not exact literal — `^[inferred` covers `^[inferred]` and long-form variants like `^[inferred from X]`; `^[ambiguous` likewise. Explicit extracted marks (`^[extracted]`, `^[stated directly]`) count as marked-extracted claims, not as unmarked.
 
 #### Boundedness assertions (required — raise, do not warn)
@@ -235,7 +235,7 @@ Two lessons worth keeping even though the rule is gone. **A density gate must be
 Add to the `LINT` log line, so the next person to argue about the denominator has more than one run to argue from:
 
 - `prov_units_definition=` — `blocks` (the definition above). Record it every run so a future redefinition is visible in the log, not silent.
-- `prov_pages_gated=` — pages skipped by the no-block/no-marker skip rule.
+- `prov_pages_gated=` — pages skipped by the no-marker skip rule.
 - `prov_assert_raised=` — how many boundedness assertions fired.
 - `prov_over_unity=` — pages where a class count exceeded the unit count. Must be 0 under the block definition; log it every run, unconditionally, so a nonzero value is visible the day it appears.
 

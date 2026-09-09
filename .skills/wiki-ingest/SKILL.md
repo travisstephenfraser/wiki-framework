@@ -456,7 +456,7 @@ When **updating** an existing page, recompute `base_confidence` only if sources 
 - Inferred claims get a trailing `^[inferred]`
 - Ambiguous/contested claims get a trailing `^[ambiguous]`
 - Extracted claims need no marker
-- After writing the page, count rough fractions and write them to a `provenance:` frontmatter block (extracted/inferred/ambiguous summing to ~1.0). When updating an existing page, recompute and update the block.
+- Do **not** write a numeric `provenance:` block (`extracted`/`inferred`/`ambiguous` fractions). Fork decision 2026-09-09: the inline markers are the provenance record and the numeric summary was dropped vault-wide (see wiki-lint Check 7). Upstream templates still emit it — do not restore it on a merge.. When updating an existing page, recompute and update the block.
 
 ### Step 6: Update Cross-References
 
@@ -557,7 +557,7 @@ After ingesting, verify:
 - [ ] `index.md` reflects all changes
 - [ ] `log.md` has the ingest entry
 - [ ] Source attribution is present for every new claim
-- [ ] Inferred and ambiguous claims are marked with `^[inferred]` / `^[ambiguous]`; `provenance:` frontmatter block is present on new and updated pages
+- [ ] Inferred and ambiguous claims are marked with `^[inferred]` / `^[ambiguous]`; no numeric `provenance:` block is written (fork decision 2026-09-09) on new and updated pages
 - [ ] Every new/updated page has a `summary:` frontmatter field (1–2 sentences, ≤200 chars)
 - [ ] `relationships:` block is present on pages where source text made typed connections clear; all entries use an allowed type from `llm-wiki/SKILL.md`
 - [ ] If `QMD_WIKI_COLLECTION` is set and the QMD CLI is available, `qmd update` has run after writing pages
