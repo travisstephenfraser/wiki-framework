@@ -124,17 +124,25 @@ Check whether pages are being honest about how much of their content is inferred
 **How to check:**
 
 - For each page with a `provenance:` block or any `^[inferred]`/`^[ambiguous]` markers, count **claim units** and how many carry each marker
-- **Claim unit** = one bullet (`-`/`*`) or numbered list item. It is *not* a non-blank line. Using lines as the denominator silently inflates `extracted`, because prose paragraphs, headings, table rows, and code lines all land in the denominator while only bullets typically carry markers. On a real page this read 0.05 inferred by line vs 0.21 by claim unit — a 4× understatement, entirely an artifact of the denominator.
+- **Claim unit = one block.** Decided 2026-09-09 after measurement (record below). Split the body into blocks, in this order:
+  1. Remove fenced code blocks (```` ``` ````/`~~~`) entirely — they are not claims.
+  2. Split what remains into units: each **list item** (`-`/`*`/`1.`, together with its indented continuation lines), each **prose paragraph** (blank-line separated), each **table row** (header row included — only the `|---|---|` separator is dropped), and each **blockquote paragraph**. Drop headings, blank lines, and table separator rows.
+  3. *Then* blank inline code spans **inside each unit** before reading markers. Order matters: a table row whose cells are all code (paths, commands) is still a fact row and must stay in the denominator — blanking before splitting silently deletes it.
+  4. A unit's class is the **most uncertain marker it contains**: `ambiguous` > `inferred` > `extracted`/unmarked. A unit with no marker is extracted by convention.
+  5. `inferred = inferred_units / units`, `ambiguous = ambiguous_units / units`, `extracted = 1 − inferred − ambiguous`.
 
-  **⚠ This definition is under review and is the fork's outlier.** Upstream `wiki-lint` and this fork's own write-side spec (`llm-wiki`, Provenance Markers) both say *sentences/bullets*; only this file says bullets-only. The two definitions differ by roughly **5×** on real pages, which is enough to move every threshold below. Until that is resolved, treat any fraction this check produces as denominator-dependent and **do not tune a threshold against it**. Whichever definition wins, record it in the LINT log line (see Instrumentation).
+  This is **bounded by construction**: a class count can never exceed the unit count. It also matches how markers are actually written — measured 2026-09-09, **95.9 %** of the vault's 1,687 markers sit at the end of their block, and only 14 of 8,398 units carry more than one marker, so classifying at unit level loses nothing. Markers inside code never reach the numerator, so the page that *defines* the marker vocabulary no longer reads as maximally synthetic — the measurement no longer counts its own inputs.
 
-- **Exclude markers inside code from the numerator.** Blank fenced blocks and inline code spans in the body before counting, exactly as Check 2 does. Otherwise the page that *defines* these markers reads as maximally synthetic, because the check is counting its own vocabulary — the measurement reading its own inputs. (Measured 2026-09-09: 2 pages, 3 markers. Small in aggregate, but it lands precisely on the pages documenting the instrument, which is where a self-reading measurement does the most damage.)
-- Compute rough fractions (`extracted`, `inferred`, `ambiguous`)
+  **Not lines, not bullets, not sentences.** Lines inflate `extracted` (0.05 by line vs 0.21 by unit on a hand-checked page, 2026-08-15). Bullets-only, the 2026-08-15 definition, dropped every prose claim from the denominator while keeping its marker in the numerator — **18 of 247 pages computed over unity and one divided by zero** on 2026-09-09. Sentences (upstream's wording) are not bounded by construction, need an arbitrary word-count floor, and split a paragraph marked once into several units of which only one counts, understating `inferred` on paragraph-marked pages by roughly 2× (independent-measurer-discipline: 0.083 by sentence, 0.155 by block).
+
+- Compute the fractions as above
 - **Run the boundedness assertions below before reporting any fraction.**
 - Apply these thresholds:
   - **AMBIGUOUS > 15%**: flag as "speculation-heavy" — even 1-in-7 claims being genuinely uncertain is a signal the page needs tighter sourcing or should be moved to `synthesis/`
-  - **INFERRED > 40% with no `sources:` in frontmatter**: flag as "unsourced synthesis" — the page is making connections but has nothing to cite
+  - **INFERRED > 40% with no `sources:` in frontmatter** (missing or empty list): flag as "unsourced synthesis" — the page is making connections but has nothing to cite
   - **Hub pages** (top 10 by incoming wikilink count) with INFERRED > 20%: flag as "high-traffic page with questionable provenance" — errors on hub pages propagate to every page that links to them
+
+  **Thresholds re-derived under the block definition, 2026-09-09, 194 marked pages.** The values are unchanged because a block is a claim, so "1 in 7 claims" still means what it says; what changed is that the fractions now mean it too. Measured headroom: ambiguous worst 0.077 (`t14`) against 0.15; unsourced inferred worst 0.167 (`m5stack-devkits`) against 0.40; hub inferred worst 0.155 (`independent-measurer-discipline`) against 0.20, with the hub threshold sitting at the vault-wide 90th percentile of `inferred` (p90 = 0.208, median 0.083, max 0.471 on `assistant-content-drift`). Every rule is quiet with real headroom, and every rule would fire on a page one notch worse than the current worst. The three hub findings reported on 2026-09-09 (0.45, 0.42, 0.21 under bullets-only) read 0.155, 0.124, 0.102 here and are withdrawn on that evidence, not by assumption.
 - **Skip** pages with no `provenance:` frontmatter and no markers — treated as fully extracted by convention
 - **Marker grammar**: match markers by prefix, not exact literal — `^[inferred` covers `^[inferred]` and long-form variants like `^[inferred from X]`; `^[ambiguous` likewise. Explicit extracted marks (`^[extracted]`, `^[stated directly]`) count as marked-extracted claims, not as unmarked.
 
@@ -146,23 +154,54 @@ A fraction outside [0,1] is not a finding about a page, it is proof the instrume
 2. **`markers <= claim_units`.** If a page carries more markers than the denominator has units, the denominator does not contain the numerator's population. That is a unit mismatch, and no tolerance value repairs a unit mismatch.
 3. **`0 <= fraction <= 1`** for every computed fraction on every page.
 
-**Expect assertion 2 to fire today, and expect that to be correct.** Measured 2026-09-09 on 247 content pages: **18 pages carry more markers than bullets**, because this vault's house style puts markers on prose paragraphs. The assertion is not a bug report about those pages, it is the bullets-only denominator refusing to produce a number it cannot justify. It clears when the denominator question is settled — not before, and not by loosening the assertion.
+**Under the block definition none of these can fire on a real page** — a class count is a subset of the unit count. They stay because they are cheap and they are the guard against an *implementation* error: an agent that blanks code before splitting, counts markers instead of units, or forgets to drop fenced blocks. If one fires, the count is wrong, not the page. (Before 2026-09-09, under bullets-only, assertion 2 fired on 18 of 247 pages and assertion 1 on one; that was the denominator being wrong, and it is why the definition changed.)
 
 #### Known-answer fixture (required)
 
-Assertions that only ever pass prove nothing. Per `guards-that-do-not-guard`, every absence assertion needs a presence one, so this check carries pages that must go **red** and a page that must go **green**. Anchor on the *property*, not on the counts — these pages are live and their marker counts move.
+Assertions that only ever pass prove nothing. Per `guards-that-do-not-guard`, every absence assertion needs a presence one, so this check carries one anchor that must go **red** and live pages that must go **green** with a known value. Run all of them every time.
 
-| anchor | property | must |
-|---|---|---|
-| `projects/cs160-prog1/cs160-prog1.md` | markers present, **zero** bullets | **RAISE** assertion 1 (divide-by-zero) |
-| `skills/cross-link-detector-traps.md` | markers **exceed** bullets | **RAISE** assertion 2 (unit mismatch) |
-| `references/macos-migration.md` | markers ≤ bullets, all fractions in range | **PASS** — fractions reported, nothing raised |
+**Red anchor — hand-counted, inline, must flag.** Count this snippet exactly as the recipe says:
 
-If all three pass, or all three raise, the fixture is not discriminating and the check is untrustworthy regardless of what it reported. Reference values measured 2026-09-09 under the bullets denominator, recorded so fixture drift is visible rather than silent: cs160-prog1 = 6 markers / 0 bullets; cross-link-detector-traps = 24 markers / 5 bullets; macos-migration = 6 markers / 6 bullets, inferred 0.500, ambiguous 0.000.
+```
+- Claim one. ^[extracted]
+- Claim two. ^[inferred]
+
+Claim three is a paragraph. ^[ambiguous]
+
+| a | b |
+|---|---|
+| row four | `code` |
+```
+
+Five units: two list items, one paragraph, the table header row, one table data row; only the separator is dropped. Classes: 1 extracted, 1 inferred, 1 ambiguous, 2 unmarked. **Expected: `inferred = 0.20`, `ambiguous = 0.20`, `extracted = 0.60`.** The ambiguous rule (> 0.15) **must fire** on it. A count of 4 means the data row was lost (code blanked before splitting) or the header was dropped; 6 means the separator was kept. This snippet caught exactly such a mismatch on the day it was written, which is what it is for.
+
+**Green anchors — live pages, hand-verified 2026-09-09.** These counts move as pages are edited, so re-verify by hand if one drifts rather than assuming the page changed.
+
+| page | units | inferred | ambiguous | must |
+|---|---|---|---|---|
+| `references/macos-migration.md` | 14 (1 note, 2 prose, 1 table header, 3 table rows, 7 list items) | 3 → **0.214** | 0 → **0.000** | compute in range, no rule fires |
+| `projects/cs160-prog1/cs160-prog1.md` | 20, **zero bullets** | 1 → 0.050 | 0 | **compute**, not divide by zero — this page raised assertion 1 under bullets-only |
+| `skills/cross-link-detector-traps.md` | 35 | 7 → 0.200 | 1 → 0.029 | **compute** ≤ 1 — this page read 4.8 markers per bullet under bullets-only |
+
+If the red anchor passes, or any green anchor raises, the fixture is not discriminating and nothing this check reports can be trusted.
 
 #### Degeneracy assertion (required)
 
 After computing findings, check the direction split. If **every** flagged page — or all but one — moves on the same field in the same direction, **the measurement is broken; report that and suppress the page list.** A real population is mixed. A one-directional sweep means the estimator is reading its own denominator, marker convention, or gate, not the pages. This costs one comparison and is the difference between reporting one defect and filing 25 false ones. (Fork-local; no upstream equivalent. Also relied on by Check 8 and by `cross-linker` — do not delete it with the drift rule.)
+
+#### Denominator decision record (2026-09-09)
+
+Three definitions were measured on the same day against all three rules and both boundedness assertions; the one above won. Recorded so the next person does not redo it from one page.
+
+| definition | bounded by construction | zero-denominator / over-unity pages | rules firing | matches marker placement |
+|---|---|---|---|---|
+| bullets only (2026-08-15 → 2026-09-09) | no | 1 / 18 | 4, all on an unbounded measure | no — drops the 65 % of markers that end paragraphs |
+| sentences + bullets (upstream wording) | no (needs a word floor) | 0 / 0 on this vault | 0 | partly — splits a once-marked paragraph into several units |
+| **blocks** | **yes** | **0 / 0** | 0 | **yes — 95.9 % of markers end a block** |
+
+The declared `provenance:` blocks were tried as ground truth and rejected: recomputed `inferred` runs below the declaration under every definition (93 of 95 pages under blocks), and on the hand-counted anchor the declaration says 0.7 where the page reads 0.21 by any honest count. They are holistic guesses, which is the 2026-08-15 finding restated, and it is why the drift rule below is retired rather than repaired. The hand count is the anchor; the declaration is not.
+
+**Trap patch.** Upstream says "sentences/bullets". Do not restore that wording on a merge; the write-side comment in `llm-wiki` was changed to match this definition on the same day.
 
 #### Retired: the drift rule (2026-09-09)
 
@@ -189,16 +228,16 @@ Two lessons worth keeping even though the rule is gone. **A density gate must be
 - For ambiguous-heavy: re-ingest from sources, resolve the uncertain claims, or split speculative content into a `synthesis/` page
 - For unsourced synthesis: add `sources:` to frontmatter or clearly label the page as synthesis
 - For hub pages with INFERRED > 20%: prioritize for re-ingestion — errors here have the widest blast radius
-- For a raised boundedness assertion: **fix the instrument, not the page.** The page is not wrong; the count is. Resolve the denominator question first.
+- For a raised boundedness assertion: **fix the count, not the page.** Under the block definition an assertion cannot fire on a real page, so re-run the red anchor above and find the implementation error.
 
 #### Instrumentation (record on every run)
 
 Add to the `LINT` log line, so the next person to argue about the denominator has more than one run to argue from:
 
-- `prov_units_definition=` — `bullets` or `sentences+bullets`. Which denominator this run used.
+- `prov_units_definition=` — `blocks` (the definition above). Record it every run so a future redefinition is visible in the log, not silent.
 - `prov_pages_gated=` — pages skipped by the no-block/no-marker skip rule.
 - `prov_assert_raised=` — how many boundedness assertions fired.
-- `prov_over_unity=` — pages where `markers > claim_units`. This is the number that decides the denominator question; log it every run, unconditionally, even when it is zero.
+- `prov_over_unity=` — pages where a class count exceeded the unit count. Must be 0 under the block definition; log it every run, unconditionally, so a nonzero value is visible the day it appears.
 
 ### 8. Fragmented Tag Clusters
 

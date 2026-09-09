@@ -405,3 +405,30 @@ hub findings before the number that decides both exists. Concrete vault risk: Ta
 | 7 | numeric-only filter (`extracted:`/`inferred:`/`ambiguous:` sub-keys, 213 pages), edit `_meta/ingest-rules.md:45`, `wiki-dedup:178`, `wiki-capture:255`, record trap patch, own commit, diff-count assertion `== 213` before commit | **Fable**, after 3 |
 
 Fetch `upstream/main` before Task 0 so #204/#206 can be diffed rather than described.
+
+---
+
+## PHASE 2 RESOLUTION (2026-09-09, Fable 5.1)
+
+**Task 3 decided: (iv′) block-level claim units, not (ii).** The spec recommended (ii) gated on
+measurement; the measurement went the other way. Three definitions on 194 marked pages, all three
+rules, both boundedness assertions:
+
+| definition | bounded by construction | zero-denom / over-unity | rules firing | matches marker placement |
+|---|---|---|---|---|
+| (i) bullets only | no | 1 / 18 | 4, all on an unbounded measure | no |
+| (ii) sentences + bullets | no (word floor) | 0 / 0 here | 0 | partly; ~2× understatement on paragraph-marked pages |
+| blocks | **yes** | **0 / 0** | 0 | **95.9 % of 1,687 markers end a block** |
+
+Anchors: hand count of `references/macos-migration.md` = 14 units, 3 inferred, 0.214 (declared block
+says 0.7, so the declared blocks are not ground truth, under any definition, 93 of 95 pages one-way).
+Multi-marker units 14 of 8,398, so unit-level classification loses nothing. Option (iii)'s "arbitrary
+floor" objection applies to (ii) as well; blocks need no floor.
+
+**Task 2 re-derived:** thresholds keep 0.15 / 0.40 / 0.20 because a block is a claim; headroom
+recorded in Check 7 (worst 0.077 / 0.167 / 0.155; vault inferred p90 0.208). The circularity in
+F3 is closed: the three withdrawn hub findings are withdrawn on measured values, not on assumption.
+
+**F7 unchanged.** Task 7 still waits on the concurrent vault writer finishing and committing, and
+on a numeric-only filter with a recount.
+

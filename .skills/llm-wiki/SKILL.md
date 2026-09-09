@@ -339,7 +339,7 @@ Example:
 
 ```yaml
 provenance:
-  extracted: 0.72   # rough fraction of sentences/bullets with no marker
+  extracted: 0.72   # rough fraction of blocks (paragraphs, list items, table rows) with no marker
   inferred: 0.25
   ambiguous: 0.03
 ```
@@ -348,7 +348,7 @@ These are best-effort numbers written by the ingest skill at create/update time.
 
 > **`wiki-lint` no longer drift-checks these values (retired 2026-09-09).** The former rule flagged any field more than 0.20 from a marker-based recompute, gated on density (≥10 inline markers, later a ≥0.60 ratio). It was retired because a *holistic write-time judgment* and a *marker count* are different populations, so the comparison was one-directional by construction. See wiki-lint Check 7, "Retired: the drift rule", for the evidence and the reversal criterion.
 
-**Denominator, unresolved.** The comment above says *sentences/bullets*, which matches upstream. `wiki-lint` currently counts **bullets only**. The two differ by roughly 5× on real pages. Until one definition wins, a `provenance:` block is a declared estimate, not a measured one — write it as an honest holistic judgment and do not attempt to match it to any recompute.
+**Denominator, decided 2026-09-09.** A claim unit is a *block*: a list item, a prose paragraph, a table data row, or a blockquote paragraph, classified by the most uncertain marker it contains. Upstream's comment says *sentences/bullets*; this fork's `wiki-lint` Check 7 records why blocks won (bounded by construction; 95.9 % of markers end a block). When you write this frontmatter, estimate by that rule — but it stays a declared estimate, and nothing drift-checks it.
 
 ## Typed Relationships
 
