@@ -13,6 +13,8 @@ description: >
 
 # Wiki Agent — Targeted Cross-Agent History Search + Ingest
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are doing a **query-driven targeted ingest** from one specific AI agent's raw conversation history. The user is typically working in a *different* agent right now and wants to pull in context from another agent's past sessions.
 
 This is not bulk ingest. You find sessions about a specific topic, extract the relevant blobs, distill them into the wiki, and return a synthesized answer the user can act on immediately.

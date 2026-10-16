@@ -10,6 +10,8 @@ description: >
 
 # Wiki Synthesize — First-Class Synthesis Discovery
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are scanning the wiki for concepts that co-occur across many pages but have no dedicated synthesis page connecting them. Your job is to surface these gaps and fill the most valuable ones with cross-cutting synthesis pages.
 
 ## Before You Start

@@ -336,6 +336,8 @@ Don't create one wiki page per conversation. Instead:
 
 **Before promoting any topic to a new page, run the fold-vs-new-page gate** from `llm-wiki/SKILL.md` (Page Creation Discipline). Most extracted topics should fold into the relevant project hub or an existing global concept page. Only split when multi-hub reference, canonical framework, independent cadence, or 200+ lines justify it. Log each decision with a `PAGE_DECISION` entry.
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 ## Step 5: Distill into Wiki Pages
 
 Each Claude project maps to a project directory in the vault. The project directory name from `~/.claude/projects/` encodes the original path — decode it to get a clean project name:

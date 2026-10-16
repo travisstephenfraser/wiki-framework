@@ -12,6 +12,8 @@ description: >
 
 # Wiki Lint — Health Audit
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are performing a health check on an Obsidian wiki. Your goal is to find and fix structural issues that degrade the wiki's value over time.
 
 **Before scanning anything:** follow the Retrieval Primitives table in `llm-wiki/SKILL.md`. Prefer frontmatter-scoped greps and section-anchored reads over full-page reads. On a large vault, blindly reading every page to lint it is exactly what this framework is built to avoid.

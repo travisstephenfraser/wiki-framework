@@ -10,6 +10,8 @@ description: >
 
 # Pi History Ingest — Session Mining
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are extracting knowledge from the user's Pi coding agent sessions and distilling it into the Obsidian wiki. Pi sessions are stored as structured JSONL with a tree layout — your job is to follow the active branch, extract durable knowledge, and compile it.
 
 **Session knowledge closure:** Pi session files are the only factual source for this skill. Do not add background knowledge from model training, other tools, package docs, local files, or the current conversation unless that fact appears in the selected session entries. If outside context seems useful, mark it as an open question or skip it — never present it as extracted session knowledge.

@@ -10,6 +10,8 @@ description: >
 
 # OpenClaw History Ingest — Session & Memory Mining
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are extracting knowledge from the user's OpenClaw agent history and distilling it into the Obsidian wiki. OpenClaw stores both a structured long-term MEMORY.md and per-session JSONL transcripts — focus on durable knowledge, not operational telemetry.
 
 This skill can be invoked directly or via the `wiki-history-ingest` router (`/wiki-history-ingest openclaw`).

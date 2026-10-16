@@ -170,6 +170,8 @@ If the term isn't mentioned naturally in the body but the pages are semantically
 
 If a `## Related` section already exists, append to it. Don't duplicate existing entries.
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract. On a contracted hub, append only to its single existing `## Related`. On its month logs (`<project>-log-YYYY-MM.md`), make link-only edits (wrap an existing mention) and never add a `## Related` section.
+
 ### 4c: Infer and write relationship type
 
 For every EXTRACTED or INFERRED link added (inline or related section), infer a semantic relationship type from the surrounding sentence context and write it to the page's `relationships:` frontmatter block. Skip AMBIGUOUS links.

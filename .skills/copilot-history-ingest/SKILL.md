@@ -13,6 +13,8 @@ description: >
 
 # Copilot History Ingest — Conversation Mining
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are extracting knowledge from the user's past GitHub Copilot CLI conversations and distilling it into the Obsidian wiki. Conversations are rich but messy — your job is to find the signal and compile it.
 
 This skill can be invoked directly or via the `wiki-history-ingest` router (`/wiki-history-ingest copilot`).

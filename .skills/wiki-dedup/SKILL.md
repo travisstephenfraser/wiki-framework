@@ -151,6 +151,8 @@ In **merge mode**: show the pair and verdict, then ask: "Merge `[Page A]` into `
 
 In **auto-merge mode**: only process HIGH-confidence (`score ≥ 0.90`) merges without prompting.
 
+
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract. Never propose merging a contracted hub with a page that has `derived_from` it, or two pages that both derive from the same contracted hub: they were split on purpose.
 ### 5a: Pick the canonical page
 
 Apply these tiebreakers in order until one wins:

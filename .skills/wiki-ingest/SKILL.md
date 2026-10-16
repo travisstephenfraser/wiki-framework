@@ -362,6 +362,8 @@ Pages without a `tier:` field are treated as `supporting`. When in doubt, err to
 
 The plan should explicitly label each candidate `fold → <parent hub>` or `split → new page` before Step 5 writes anything. Default to fold; split is the exception, not the norm. This is the discipline that keeps the wiki from fragmenting into lightly-linked single-use pages as it grows.
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 ### Step 5: Write/Update Pages
 
 For each page in your plan:
@@ -404,6 +406,7 @@ For each page in your plan:
 
 **If folding content into an existing hub:**
 - Read the parent hub first to pick the right subsection placement
+- If the parent hub has `hub_contract: 1`, do not add a subsection: route by its `## Maintenance contract`
 - Add the content as a subsection (usually `###` under an existing `##` section)
 - Update the parent's `updated` timestamp and `sources` list
 - Append `PAGE_DECISION action=fold content="<brief>" parent=<hub> promote_back_trigger="<condition>"` to `log.md`

@@ -42,6 +42,8 @@ _TAGS_LIST_RE = re.compile(r"^tags:\s*\n((?:\s+-\s+\S+\n)+)", re.MULTILINE)
 _SUMMARY_RE = re.compile(r"^summary:\s*(.+?)$", re.MULTILINE)
 _CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
 _TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
+# Fork-local (hub contract, see obsidian_wiki/hub_contract.py and tests/test_graphrag_hub_contract.py).
+_HUB_CONTRACT_RE = re.compile(r"^hub_contract:\s*1\s*$", re.MULTILINE)
 # Keep in sync with obsidian_wiki/lint.py. Target excludes `[` so a footnote-wrapped
 # `^[[[page|alias]]]` yields `page`; the optional `\\?` handles pipes escaped for
 # Markdown tables (`[[page\|Alias]]`), which otherwise capture as `page\`.
@@ -139,6 +141,7 @@ def build_index(vault: Path) -> dict[str, dict]:
             "summary": summary,
             "category": category,
             "tier": tier,
+            "hub_contract": bool(_HUB_CONTRACT_RE.search(front)),
             "path": str(page.relative_to(vault)),
             "out_links": [],
             "in_links": [],
@@ -409,6 +412,13 @@ def query(
         )
 
     should_read = [c["page"] for c in candidates[:max_should_read] if not index_only]
+    # Fork-local (hub contract): a contracted hub is a router, not an answer. Its summary
+    # says where facts live, so never answer from it alone; read the best non-hub pages.
+    if top_candidate and index[top_candidate["slug"]].get("hub_contract"):
+        index_only = False
+        should_read = [
+            c["page"] for c in candidates if not index[c["slug"]].get("hub_contract")
+        ][:max_should_read]
     if path_result and not index_only:
         # Add path pages to should_read, deduplicated
         for p in path_result:

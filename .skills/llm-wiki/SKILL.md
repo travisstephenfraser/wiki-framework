@@ -182,9 +182,28 @@ This discipline is anti-default, not anti-page. Pages that earn their keep pass 
    - **Independent update cadence** — the content will change on a schedule disconnected from any single parent.
    - **Dominant size** — folded content would exceed ~200 lines and materially dominate the parent's readability.
 
-3. **If no trigger hits, fold.** Add the content as a subsection of the parent hub. Record a **promote-back trigger** — the specific condition under which the fold would be reversed (e.g., "if this pattern applies to Rubrica or SiteProof too, extract to `concepts/`"). The promote-back trigger goes in the log so a future ingest can revisit the decision.
+3. **If no trigger hits, fold.** Add the content as a subsection of the parent hub (unless the parent is a contracted hub; see Hub contract below). Record a **promote-back trigger** — the specific condition under which the fold would be reversed (e.g., "if this pattern applies to Rubrica or SiteProof too, extract to `concepts/`"). The promote-back trigger goes in the log so a future ingest can revisit the decision.
 
 3a. **If the folded content is about a person, add them to the parent's `people:` list** and name them in the `PAGE_DECISION` line (`people="Full Name"`). Folding decides page count; it must not lose the person. A folded person with no `people:` entry is invisible to every consumer that indexes by person, and nothing in the log says it happened. Skip the entry only when the person already has a `type: person` page or already sits in another page's `people:` list; a second record is the same defect in the other direction.
+
+### Hub contract (fork-local)
+
+Some project hubs are **contracted**: their frontmatter has `hub_contract: 1` and they are listed in
+`_meta/hub-contracts.json`. A contracted hub has been split and must not regrow. For any write that
+touches a contracted project:
+
+- **Never fold into the hub.** In the gate above, the parent becomes the page the hub's
+  `## Maintenance contract` routes to: a topic page, an existing spoke, or the month log. The hub gets
+  at most one pointer line in `## Related`.
+- **Replace Current state; never stack it.** A new status snapshot replaces the single `###` under
+  `## Current state`. The previous one moves verbatim to `<project>-log-YYYY-MM.md` for its date
+  (Pacific time), promoted to `##`, with its heading text unchanged.
+- **No dated sections on the hub,** and none added to pages the registry lists as frozen.
+- **Read the hub's `## Maintenance contract` before writing.** It is the routing table; this section
+  only points to it.
+
+The vault's pre-commit hook and `obsidian_wiki/hub_contract.py` enforce the hub's *shape*. They cannot
+judge whether content reached the *right* page, so route deliberately.
 
 4. **If a trigger hits, split.** Create the sibling page, link it from the parent, and note which trigger justified it in the log. If the page is about a person, it carries `type: person`.
 

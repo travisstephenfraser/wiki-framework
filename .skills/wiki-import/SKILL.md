@@ -10,6 +10,8 @@ description: >
 
 # Wiki Import — Reconstruct Pages from an Export
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 You are importing a vault's knowledge into the current vault from one of two sources produced by `wiki-export`:
 
 - **`graph.json`** — the graph skeleton. Reconstructs page **stubs** (frontmatter, typed relationships, a `## Related` link list — no body). Lossy.

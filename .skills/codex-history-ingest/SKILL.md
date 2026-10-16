@@ -135,6 +135,8 @@ Do not create one wiki page per session.
 
 **Before promoting any topic to a new page, run the fold-vs-new-page gate** from `llm-wiki/SKILL.md` (Page Creation Discipline). Default to folding topics into project hubs or existing global concepts; only split when a concrete trigger hits. Log each decision with a `PAGE_DECISION` entry.
 
+> **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
+
 ## Step 5: Distill into Wiki Pages
 
 Route extracted knowledge using existing wiki conventions:

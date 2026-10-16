@@ -43,6 +43,15 @@ jobs:
                  "and aborts trust-record --all. See tests/test_fork_scope.py."
             exit 1
           fi
+      - name: Hub-contract invariants (checker, graph-query routing, skill text)
+        run: |
+          if ! python -m pytest tests/test_hub_contract.py tests/test_graphrag_hub_contract.py tests/test_hub_contract_docs.py -q; then
+            echo "::error::A hub-contract invariant was lost. Contracted hubs must not regrow:" \
+                 "the checker (obsidian_wiki/hub_contract.py), the graph-query routing patch" \
+                 "(graphrag.py _HUB_CONTRACT_RE) and the skill text pointer must all survive" \
+                 "upstream merges. See tests/test_hub_contract*.py."
+            exit 1
+          fi
 
   suite:
     runs-on: ubuntu-latest

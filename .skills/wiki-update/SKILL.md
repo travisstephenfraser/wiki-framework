@@ -147,10 +147,11 @@ Do **not** write a numeric `provenance:` block (`extracted`/`inferred`/`ambiguou
 
 ### Updating vs creating
 
-- If a page already exists in the vault, **merge** new information into it. Don't create duplicates.
+- If a page already exists in the vault, **merge** new information into it. Don't create duplicates. Exception: never merge into a contracted hub (`hub_contract: 1`); route by its `## Maintenance contract`.
 - If you're adding to an existing page, update the `updated` timestamp and add the new source.
 - Check `index.md` to see what's already there before creating anything new.
 - **Before creating any new page, run the fold-vs-new-page gate** in `llm-wiki/SKILL.md` (Page Creation Discipline section). Name the parent hub and check the four split triggers (multi-hub reference / canonical framework / independent cadence / 200+ lines). If none hit, fold the content into the parent hub as a subsection and log a `PAGE_DECISION action=fold` entry with a promote-back trigger. If one hits, split and log `PAGE_DECISION action=split` with the trigger name. This check is the difference between a compounding wiki and one that slowly fragments into lightly-linked single-use pages.
+- **Hub contract (fork-local):** if the project's hub has `hub_contract: 1`, read its `## Maintenance contract` and route by it. Never fold new content into a contracted hub and never add a dated section to it. Rules: `llm-wiki/SKILL.md` → Hub contract.
 - **Never leave a named person unrecorded.** When the sync names a person reachable by neither route (no `type: person` entity, not in any `people:` list), either create the entity page if the fold gate says split, or add them to the `people:` list of the page they were folded into and say so in the `PAGE_DECISION` line (`people="Full Name"`). If they are already reachable, add nothing: a second record is the same defect in the other direction.
 
 ## Step 5: Cross-link
