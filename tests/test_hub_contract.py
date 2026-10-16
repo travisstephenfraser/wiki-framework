@@ -517,3 +517,28 @@ def test_roll_body_must_sit_under_the_matching_heading(repo: Path) -> None:
           "Earlier status. Shipped the thing. **Ruling 2026-10-15:** keep it.\n\n"
           "## State as of 2026-10-15 (shipping)\n\nSomething else.")
     assert "R10-roll" in _rules(repo, since="HEAD")[1]
+
+
+# ------------------------------------------------ re-verification suggestions (2026-10-15)
+
+
+def test_nonexistent_tree_is_an_error(tmp_path: Path) -> None:
+    assert hc.main([str(tmp_path / "no-such-dir")]) == hc.EXIT_ERROR
+
+
+def test_empty_allowlist_entry_is_an_error(vault: Path) -> None:
+    reg = json.loads((vault / hc.REGISTRY).read_text())
+    reg["hubs"][0]["heading_date_allowlist"] = [""]
+    _write(vault, hc.REGISTRY, json.dumps(reg))
+    assert hc.main([str(vault)]) == hc.EXIT_ERROR
+
+
+def test_inline_triple_backtick_does_not_open_a_fence() -> None:
+    page = hc.parse_page("t", "```x``` text\n\n## Exam run (2026-04-20)\n")
+    assert [h[2] for h in page.headings] == ["Exam run (2026-04-20)"]
+
+
+def test_roll_existence_check_errors_on_a_bad_object(repo: Path) -> None:
+    # A rev that is a commit but cannot be listed must raise, not read as "hub absent".
+    with pytest.raises(hc.CheckError):
+        hc.git_show(repo / "no-such-subdir", "HEAD", "projects/demo/demo.md")

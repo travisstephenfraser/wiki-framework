@@ -44,7 +44,7 @@ _LT_STRIP = re.compile(r'[!"#$%&()*+,.:;<=>?@^`{|}~/\[\]\\\r\n]')
 _DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*(?:[ \t]#+)?[ \t]*$")
 _SETEXT = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
-_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})")
 _LIST_OR_QUOTE = re.compile(r"^ {0,3}(?:[-*+][ \t]|\d+[.)][ \t]|>)")
 _DATED_BOLD = re.compile(r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+|>[ \t]*)*\*\*")
 _WIKILINK = re.compile(r"\[\[([^\[\]]+?)\]\]")
@@ -331,6 +331,8 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
             snapshot_line = subs[0][0]
 
     allow = [a.lower() for a in spec.get("heading_date_allowlist", [])]
+    if any(not a.strip() for a in allow):
+        raise CheckError(f"{hub_rel}: empty heading_date_allowlist entry would disable R3")
     for ln, level, text in hub.headings:
         if level not in (2, 3) or ln == snapshot_line:
             continue
@@ -512,8 +514,11 @@ def verify_history(repo: Path, since: str) -> None:
 
 def git_show(repo: Path, rev: str, rel: str) -> str | None:
     """File contents at rev; None only when the path genuinely does not exist there."""
-    if _git(repo, "cat-file", "-e", f"{rev}:{rel}").returncode != 0:
-        return None  # rev was verified, so the path is absent (e.g. a hub new in this commit)
+    listed = _git(repo, "ls-tree", "--name-only", rev, "--", rel)
+    if listed.returncode != 0:
+        raise CheckError(f"git ls-tree {rev} {rel} failed: {listed.stderr.strip()}")
+    if not listed.stdout.strip():
+        return None  # the path did not exist at rev (e.g. a hub new in this commit)
     r = _git(repo, "show", f"{rev}:{rel}")
     if r.returncode != 0:
         raise CheckError(f"git show {rev}:{rel} failed: {r.stderr.strip()}")
@@ -573,6 +578,8 @@ def check_roll(vault: Vault, spec: dict, since: str, repo: Path) -> list[Finding
 def run(
     root: Path, since: str | None = None, repo: Path | None = None
 ) -> tuple[int, list[Finding]]:
+    if not root.is_dir():
+        raise CheckError(f"{root} is not a directory")
     reg_path = root / REGISTRY
     if not reg_path.exists():
         return EXIT_PASS, []  # inert: no hub has opted in

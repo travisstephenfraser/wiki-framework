@@ -56,8 +56,17 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 PY=$(sed -n 's/^python=//p' "$DIR/PINNED")
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 
-# Inert unless the staged tree registers a contracted hub.
-git cat-file -e :_meta/hub-contracts.json 2>/dev/null || exit 0
+# Inert unless the staged tree registers a contracted hub. A git failure is not "absent".
+staged=$(git ls-files -s -- _meta/hub-contracts.json) \
+  || { echo "Commit blocked: could not read the index for the hub-contract check. Bypass deliberately with --no-verify."; exit 1; }
+if [ -z "$staged" ]; then
+  # Dropping the registry would silently switch enforcement off; make that a deliberate act.
+  if git rev-parse --verify --quiet HEAD >/dev/null && git cat-file -e HEAD:_meta/hub-contracts.json 2>/dev/null; then
+    echo "Commit blocked: this commit removes _meta/hub-contracts.json, which turns the hub contract off. If that is intended, commit with --no-verify."
+    exit 1
+  fi
+  exit 0
+fi
 
 if [ "$(sed -n 's/^sha256=//p' "$DIR/PINNED")" != "$(sha256 "$DIR/hub_contract.py")" ]; then
   echo "Commit blocked: hub_contract.py does not match its pinned sha256; re-run install-vault-hooks.sh after review. Bypass deliberately with --no-verify."
