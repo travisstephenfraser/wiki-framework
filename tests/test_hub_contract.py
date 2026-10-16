@@ -201,10 +201,10 @@ PLANTED = [
         "## 2026-07-09: Hardening\n\nx\n\n## Related",
     ),
     (
-        "R4-dated-bold",
+        "R4-dated-bold",  # planted in Related: the line above `## Related` is the allowlisted Scale section
         "projects/demo/demo.md",
-        "## Related",
-        "**Engineering status 2026-08-15:** did things.\n\n## Related",
+        "## Maintenance contract",
+        "**Engineering status 2026-08-15:** did things.\n\n## Maintenance contract",
     ),
     (
         "R5-related",
@@ -448,7 +448,26 @@ def test_missing_option_value_is_exit_2(vault: Path, argv: list[str]) -> None:
     ],
 )
 def test_dated_bold_variants_are_flagged(vault: Path, line: str) -> None:
-    _edit(vault, "projects/demo/demo.md", "## Related", f"{line}\n\n## Related")
+    # Planted in Related, outside the allowlisted `Scale as of` section that precedes it.
+    _edit(vault, "projects/demo/demo.md", "## Maintenance contract", f"{line}\n\n## Maintenance contract")
+    assert "R4-dated-bold" in _rules(vault)[1]
+
+
+def test_dated_bold_inside_an_allowlisted_section_is_not_flagged(vault: Path) -> None:
+    # A `Scale as of` section is dated by contract, so its own bullets may carry dates;
+    # the 80-character window otherwise flags ordinary attributions ("Stated ... 2026-09-30").
+    _edit(vault, "projects/demo/demo.md", "Forty widgets.",
+          "- **Over forty widgets.** Stated 2026-09-30, not re-counted.\n"
+          "- **Held at forty on purpose (2026-09-30).** One batch update later.")
+    code, findings = hc.run(vault)
+    assert code == hc.EXIT_PASS, [f.render() for f in findings]
+
+
+def test_allowlist_exemption_ends_at_the_next_heading(vault: Path) -> None:
+    # An undated child heading under an allowlisted section is not allowlisted itself,
+    # so dated bold entries cannot be stacked beneath it.
+    _edit(vault, "projects/demo/demo.md", "Forty widgets.",
+          "Forty widgets.\n\n### Notes\n\n- **2026-08-15** stacked entry.")
     assert "R4-dated-bold" in _rules(vault)[1]
 
 

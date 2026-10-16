@@ -346,8 +346,20 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
                 )
             )
 
+    # An allowlisted section (e.g. `Scale as of …`) is dated by contract, so its own lines may
+    # carry dates. The exemption covers the heading's own text only, up to the next heading of
+    # any level, so an undated child heading cannot shelter stacked dated entries.
+    exempt: list[tuple[int, int]] = []
+    for k, (ln, level, text) in enumerate(hub.headings):
+        if level in (2, 3) and any(text.lower().startswith(a) for a in allow):
+            nxt = (
+                hub.headings[k + 1][0] if k + 1 < len(hub.headings) else len(lines) + 1
+            )
+            exempt.append((ln, nxt))
     for n, line in enumerate(lines, start=1):
         if n <= hub.body_offset or n in hub.fenced or cs_range[0] <= n < cs_range[1]:
+            continue
+        if any(a <= n < b for a, b in exempt):
             continue
         m = _DATED_BOLD.match(line)
         if m and _DATE.search(line[m.end() : m.end() + 80]):
