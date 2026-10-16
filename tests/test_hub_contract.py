@@ -403,3 +403,117 @@ def test_runs_standalone_under_isolated_python(vault: Path) -> None:
     )
     assert r.returncode == hc.EXIT_VIOLATION
     assert "Routing rules (from the hub)" in r.stdout
+
+
+# --------------------------------------------------- review findings (gate review, 2026-10-15)
+
+
+def test_roll_bad_revision_is_an_error(repo: Path) -> None:
+    assert hc.main([str(repo), "--since", "no-such-rev"]) == hc.EXIT_ERROR
+
+
+def test_roll_bad_repo_is_an_error(vault: Path, tmp_path_factory) -> None:
+    not_a_repo = tmp_path_factory.mktemp("plain")
+    assert hc.main([str(vault), "--since", "HEAD", "--repo", str(not_a_repo)]) == hc.EXIT_ERROR
+
+
+def test_since_without_repo_on_a_non_git_tree_is_an_error(vault: Path) -> None:
+    # The hook's exported index is not a git repo; forgetting --repo must not disable R10.
+    assert hc.main([str(vault), "--since", "HEAD"]) == hc.EXIT_ERROR
+
+
+def test_hub_new_at_since_is_not_an_error(repo: Path) -> None:
+    _write(repo, "projects/demo/demo2.md", HUB.replace("Demo", "Demo2"))
+    reg = json.loads((repo / hc.REGISTRY).read_text())
+    reg["hubs"].append(dict(REGISTRY["hubs"][0], hub="projects/demo/demo2.md",
+                            contracted_pages=[], frozen_dated_sections={}))
+    _write(repo, hc.REGISTRY, json.dumps(reg))
+    _edit(repo, "projects/demo/demo.md", "- [[old]] — frozen older page", "- [[old]] — frozen older page\n- [[demo2]]")
+    code, findings = hc.run(repo, since="HEAD")
+    assert "R10-roll" not in {f.rule for f in findings}
+    assert code in (hc.EXIT_PASS, hc.EXIT_VIOLATION)  # evaluated, not an error
+
+
+@pytest.mark.parametrize("argv", [["--since"], ["--repo"], ["--since", "--json"]])
+def test_missing_option_value_is_exit_2(vault: Path, argv: list[str]) -> None:
+    assert hc.main([str(vault), *argv]) == hc.EXIT_ERROR
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "- **2026-08-15** did a thing.",
+        "> **Engineering status 2026-08-15:** did a thing.",
+        "1. **2026-08-15:** did a thing.",
+    ],
+)
+def test_dated_bold_variants_are_flagged(vault: Path, line: str) -> None:
+    _edit(vault, "projects/demo/demo.md", "## Related", f"{line}\n\n## Related")
+    assert "R4-dated-bold" in _rules(vault)[1]
+
+
+def test_dated_bold_inside_a_fence_is_not_flagged(vault: Path) -> None:
+    _edit(vault, "projects/demo/demo.md", "Records go to the month log;",
+          "```\n**2026-08-15** an example\n```\n\nRecords go to the month log;")
+    assert hc.run(vault)[0] == hc.EXIT_PASS
+
+
+def test_setext_dated_heading_is_flagged(vault: Path) -> None:
+    _edit(vault, "projects/demo/demo.md", "## Related", "Exam run 2026-04-20\n---\n\nx\n\n## Related")
+    assert "R3-dated-heading" in _rules(vault)[1]
+
+
+def test_crlf_and_bom_hub_passes(vault: Path) -> None:
+    p = vault / "projects/demo/demo.md"
+    p.write_bytes(("﻿" + p.read_text(encoding="utf-8")).replace("\n", "\r\n").encode("utf-8"))
+    code, findings = hc.run(vault)
+    assert code == hc.EXIT_PASS, [f.render() for f in findings]
+
+
+def test_missing_registered_pages_fail_and_empty_glob_warns(vault: Path) -> None:
+    reg = json.loads((vault / hc.REGISTRY).read_text())
+    reg["hubs"][0]["contracted_pages"].append("projects/demo/renamed-away.md")
+    reg["hubs"][0]["log_glob"] = "projects/demo/nothing-*.md"
+    _write(vault, hc.REGISTRY, json.dumps(reg))
+    code, findings = hc.run(vault)
+    assert code == hc.EXIT_VIOLATION
+    sev = {(f.rule, f.severity) for f in findings}
+    assert ("R0-registry", "violation") in sev and ("R0-registry", "warning") in sev
+
+
+def test_log_size_warning(vault: Path) -> None:
+    reg = json.loads((vault / hc.REGISTRY).read_text())
+    reg["hubs"][0]["log_warn_bytes"] = 50
+    _write(vault, hc.REGISTRY, json.dumps(reg))
+    code, findings = hc.run(vault)
+    assert code == hc.EXIT_PASS
+    assert any(f.rule == "R6-budget" and "log exceeds" in f.message for f in findings)
+
+
+def test_root_level_hub_is_a_config_error(vault: Path) -> None:
+    reg = json.loads((vault / hc.REGISTRY).read_text())
+    reg["hubs"][0]["project_dir"] = "."
+    _write(vault, hc.REGISTRY, json.dumps(reg))
+    assert hc.main([str(vault)]) == hc.EXIT_ERROR
+
+
+def test_nested_anchor_does_not_reset_like_obsidian() -> None:
+    # Obsidian 1.12.7's FT never resets depth when leaving the matched section, so A#C
+    # resolves even when C sits under a later sibling B. Pinned so a "fix" is deliberate.
+    page = hc.parse_page("t", "## A\n\n## B\n\n### C\n")
+    assert hc.resolve_subpath(page, "A#C")
+
+
+def test_path_qualified_link_resolves_to_the_right_duplicate(vault: Path) -> None:
+    _write(vault, "elsewhere/demo-topic.md", "---\ntitle: Other\n---\n# Other\n")
+    v = hc.Vault(vault)
+    assert v.resolve("projects/demo/demo-topic", "concepts/linker.md") == "projects/demo/demo-topic.md"
+    assert v.resolve("demo-topic", "elsewhere/x.md") == "elsewhere/demo-topic.md"
+
+
+def test_roll_body_must_sit_under_the_matching_heading(repo: Path) -> None:
+    _edit(repo, "projects/demo/demo.md", OLD_SNAPSHOT_HEADING, NEW_SNAPSHOT)
+    _edit(repo, "projects/demo/demo-log-2026-10.md", "Earlier status.",
+          "Earlier status. Shipped the thing. **Ruling 2026-10-15:** keep it.\n\n"
+          "## State as of 2026-10-15 (shipping)\n\nSomething else.")
+    assert "R10-roll" in _rules(repo, since="HEAD")[1]

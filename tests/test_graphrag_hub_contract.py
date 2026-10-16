@@ -70,3 +70,22 @@ def test_uncontracted_behaviour_unchanged(tmp_path: Path) -> None:
     assert r["candidates"][0]["page"] == "demo.md"
     assert r["index_only"] is True
     assert r["should_read"] == []
+
+
+def test_quoted_flag_agrees_with_the_checker(tmp_path: Path) -> None:
+    from obsidian_wiki.hub_contract import frontmatter_value
+
+    v = tmp_path / "vault"
+    v.mkdir()
+    _page(v, "demo", 'title: Demo\nsummary: Hub.\nhub_contract: "1"')
+    assert build_index(v)["demo"]["hub_contract"] is True
+    assert frontmatter_value('hub_contract: "1"', "hub_contract") == "1"
+
+
+def test_hub_as_only_candidate_still_yields_a_reading_list(tmp_path: Path) -> None:
+    v = tmp_path / "vault"
+    v.mkdir()
+    _page(v, "demo", "title: Demo\nsummary: Hub.\ntier: core\nhub_contract: 1")
+    r = query(v, "demo")
+    assert r["index_only"] is False
+    assert r["should_read"] == ["demo.md"]

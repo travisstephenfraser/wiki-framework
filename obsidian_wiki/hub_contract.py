@@ -7,18 +7,24 @@ never accumulates dated sections. Contracted hubs are listed in the vault regist
 module is inert until a hub opts in.
 
 Deliberately standalone and stdlib-only: the vault's git pre-commit hook runs it as
-``python3 -I hub_contract.py <vault>``, which forbids importing anything from the
+``python3 -I hub_contract.py <tree>``, which forbids importing anything from the
 framework (``-I`` drops the script directory, PYTHONPATH and user site-packages).
 
 Exit codes: 0 = pass (warnings allowed), 3 = contract violation, 2 = could not run.
+Any failure to evaluate a rule (bad registry, bad revision, git error, bad arguments)
+is exit 2, never a pass.
 
-Anchor semantics replicate Obsidian 1.12.7's subpath resolver (extracted from the
-app's ``app.js``): the subpath is split on ``#``; a single ``^id`` part is a block id
-matched case-insensitively; otherwise headings are walked in order and part *g*
+Anchor semantics replicate Obsidian 1.12.7's subpath resolver (``FT`` in the app's
+``app.js``): the subpath is split on ``#``; a single ``^id`` part is a block id matched
+case-insensitively; otherwise headings are walked in document order and part *g*
 matches a heading when ``LT(heading).lower() == LT(part).lower()`` and the heading is
-deeper than the previous matched part, where ``LT`` replaces ASCII punctuation
-``!"#$%&()*+,.:;<=>?@^`{|}~/[]\\`` and CR/LF with spaces and collapses whitespace.
-The first full match wins.
+deeper than the previously matched part. Like Obsidian, the walk never resets when it
+leaves the matched section. ``LT`` replaces ASCII punctuation ``!"#$%&()*+,.:;<=>?@^`{|}~/[]\\``
+and CR/LF with spaces and collapses whitespace. The first full match wins.
+
+Headings: ATX (0-3 leading spaces) and setext (``===`` / ``---`` under a paragraph line),
+outside fenced code. Headings inside list items or callouts are not recognised; this
+vault does not author them.
 """
 
 from __future__ import annotations
@@ -36,16 +42,34 @@ SKIP_DIRS = {".git", ".obsidian", "_archives", "_raw"}
 
 _LT_STRIP = re.compile(r'[!"#$%&()*+,.:;<=>?@^`{|}~/\[\]\\\r\n]')
 _DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
-_HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$")
-_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+_ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*(?:[ \t]#+)?[ \t]*$")
+_SETEXT = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+_FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_LIST_OR_QUOTE = re.compile(r"^ {0,3}(?:[-*+][ \t]|\d+[.)][ \t]|>)")
+_DATED_BOLD = re.compile(r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+|>[ \t]*)*\*\*")
 _WIKILINK = re.compile(r"\[\[([^\[\]]+?)\]\]")
 _BLOCK_ID = re.compile(r"(?:^|\s)\^([A-Za-z0-9-]+)\s*$")
 _LOG_NAME = re.compile(r"-(\d{4})-(\d{2})\.md$")
 
 
+class CheckError(Exception):
+    """A rule could not be evaluated; reported as exit 2, never as a pass."""
+
+
 def lt(text: str) -> str:
     """Obsidian's ``stripHeading``: punctuation to spaces, whitespace collapsed."""
     return re.sub(r"\s+", " ", _LT_STRIP.sub(" ", text)).strip()
+
+
+def normalise(text: str) -> str:
+    """Strip a UTF-8 BOM and normalise CRLF/CR line endings."""
+    if text.startswith("﻿"):
+        text = text[1:]
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def read_text(path: Path) -> str:
+    return normalise(path.read_text(encoding="utf-8", errors="replace"))
 
 
 @dataclass
@@ -58,6 +82,7 @@ class Page:
         default_factory=list
     )  # (line, level, text)
     blocks: set[str] = field(default_factory=set)
+    fenced: set[int] = field(default_factory=set)  # 1-based lines inside fenced code
 
 
 @dataclass
@@ -72,52 +97,66 @@ class Finding:
 
 
 def parse_page(rel: str, text: str) -> Page:
+    text = normalise(text)
     page = Page(rel=rel, text=text)
     lines = text.split("\n")
     start = 0
-    if lines and lines[0] == "---":
+    if lines and lines[0].rstrip() == "---":
         for i in range(1, len(lines)):
-            if lines[i] == "---":
+            if lines[i].rstrip() in ("---", "..."):
                 page.frontmatter = "\n".join(lines[1:i])
                 start = i + 1
                 break
     page.body_offset = start
-    fence = None
+    fence: tuple[str, int] | None = None
+    prev_para = False  # previous line can be a setext heading's text
     for i in range(start, len(lines)):
-        line = lines[i]
-        m = _FENCE.match(line)
-        if m:
-            marker = m.group(1)[0]
-            if fence is None:
-                fence = marker
-            elif marker == fence:
-                fence = None
-            continue
+        line, n = lines[i], i + 1
         if fence:
+            page.fenced.add(n)
+            m = re.match(
+                rf"^ {{0,3}}({re.escape(fence[0])}{{{fence[1]},}})[ \t]*$", line
+            )
+            if m:
+                fence = None
+            prev_para = False
             continue
-        h = _HEADING.match(line)
+        m = _FENCE_OPEN.match(line)
+        if m:
+            fence = (m.group(1)[0], len(m.group(1)))
+            page.fenced.add(n)
+            prev_para = False
+            continue
+        if not line.strip():
+            prev_para = False
+            continue
+        s = _SETEXT.match(line)
+        if s and prev_para:
+            level = 1 if s.group(1).startswith("=") else 2
+            page.headings.append((n - 1, level, lines[i - 1].strip()))
+            prev_para = False
+            continue
+        h = _ATX.match(line)
         if h:
-            page.headings.append((i + 1, len(h.group(1)), h.group(2)))
+            page.headings.append((n, len(h.group(1)), (h.group(2) or "").strip()))
+            prev_para = False
             continue
         b = _BLOCK_ID.search(line)
         if b:
             page.blocks.add(b.group(1).lower())
+        prev_para = not _LIST_OR_QUOTE.match(line)
     return page
 
 
 def strip_code(text: str) -> str:
     """Blank fenced blocks and inline code so example links are not treated as links."""
-    out, fence = [], None
-    for line in text.split("\n"):
-        m = _FENCE.match(line)
-        if m:
-            marker = m.group(1)[0]
-            fence = marker if fence is None else (None if marker == fence else fence)
+    page = parse_page("", text)
+    out = []
+    for n, line in enumerate(page.text.split("\n"), start=1):
+        if n in page.fenced:
             out.append("")
-            continue
-        out.append(
-            "" if fence else re.sub(r"`[^`\n]*`", lambda x: " " * len(x.group(0)), line)
-        )
+        else:
+            out.append(re.sub(r"`[^`\n]*`", lambda x: " " * len(x.group(0)), line))
     return "\n".join(out)
 
 
@@ -172,28 +211,45 @@ class Vault:
             rel = p.relative_to(root)
             if set(rel.parts) & SKIP_DIRS:
                 continue
-            self.pages[rel.as_posix()] = parse_page(
-                rel.as_posix(), p.read_text(encoding="utf-8", errors="replace")
-            )
+            self.pages[rel.as_posix()] = parse_page(rel.as_posix(), read_text(p))
         self.by_stem: dict[str, list[str]] = {}
         for rel in self.pages:
             self.by_stem.setdefault(Path(rel).stem.lower(), []).append(rel)
 
     def resolve(self, target: str, source: str) -> str | None:
+        """Exact path, then path suffix, then basename (same folder as the source first)."""
         if not target:
             return source
-        t = target[:-3] if target.lower().endswith(".md") else target
-        t = t.strip("/")
+        t = (
+            (target[:-3] if target.lower().endswith(".md") else target)
+            .strip("/")
+            .lower()
+        )
         for rel in self.pages:
-            if rel[:-3].lower() == t.lower():
+            if rel[:-3].lower() == t:
                 return rel
-        cands = self.by_stem.get(Path(t).name.lower())
-        return cands[0] if cands else None
+        if "/" in t:
+            suffix = [rel for rel in self.pages if rel[:-3].lower().endswith("/" + t)]
+            if suffix:
+                return suffix[0]
+        cands = self.by_stem.get(t.rsplit("/", 1)[-1], [])
+        if not cands:
+            return None
+        here = str(Path(source).parent)
+        same = [c for c in cands if str(Path(c).parent) == here]
+        return (same or cands)[0]
 
 
 # ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
+
+
+def _log_pages(vault: Vault, spec: dict) -> list[str]:
+    glob = spec.get("log_glob")
+    if not glob:
+        return []
+    return sorted(p.relative_to(vault.root).as_posix() for p in vault.root.glob(glob))
 
 
 def check_hub(vault: Vault, spec: dict) -> list[Finding]:
@@ -207,6 +263,32 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
             )
         ]
 
+    project_dir = spec.get("project_dir", str(Path(hub_rel).parent))
+    if project_dir in ("", "."):
+        raise CheckError(
+            f"{hub_rel}: project_dir must name the hub's project folder, not the vault root"
+        )
+    for rel in [
+        *spec.get("contracted_pages", []),
+        *spec.get("frozen_dated_sections", {}),
+    ]:
+        if rel not in vault.pages:
+            out.append(
+                Finding(
+                    "R0-registry",
+                    "violation",
+                    rel,
+                    "page named in the registry does not exist (renamed or deleted?)",
+                )
+            )
+    log_pages = _log_pages(vault, spec)
+    if spec.get("log_glob") and not log_pages:
+        out.append(
+            Finding(
+                "R0-registry", "warning", spec["log_glob"], "log_glob matches no files"
+            )
+        )
+
     if frontmatter_value(hub.frontmatter, "hub_contract") != "1":
         out.append(
             Finding(
@@ -218,9 +300,7 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
         )
 
     lines = hub.text.split("\n")
-    current = [
-        h for h in hub.headings if h[1] == 2 and h[2].strip().lower() == "current state"
-    ]
+    current = [h for h in hub.headings if h[1] == 2 and h[2].lower() == "current state"]
     snapshot_line = None
     cs_range = (0, 0)
     if len(current) != 1:
@@ -264,22 +344,21 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
                 )
             )
 
-    for i, line in enumerate(lines, start=1):
-        if i <= hub.body_offset or cs_range[0] <= i < cs_range[1]:
+    for n, line in enumerate(lines, start=1):
+        if n <= hub.body_offset or n in hub.fenced or cs_range[0] <= n < cs_range[1]:
             continue
-        if line.lstrip().startswith("**") and _DATE.search(line.lstrip()[:80]):
+        m = _DATED_BOLD.match(line)
+        if m and _DATE.search(line[m.end() : m.end() + 80]):
             out.append(
                 Finding(
                     "R4-dated-bold",
                     "violation",
-                    f"{hub_rel}:{i}",
-                    "date-led bold paragraph on a contracted hub (records go to the month log)",
+                    f"{hub_rel}:{n}",
+                    "date-led bold entry on a contracted hub (records go to the month log)",
                 )
             )
 
-    related = [
-        h for h in hub.headings if h[1] == 2 and h[2].strip().lower() == "related"
-    ]
+    related = [h for h in hub.headings if h[1] == 2 and h[2].lower() == "related"]
     if len(related) != 1:
         out.append(
             Finding(
@@ -311,14 +390,10 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
             )
         )
 
-    linked = {vault.resolve(t, hub_rel) for _, (t, _s) in link_targets(hub.text)}
-    project_dir = spec.get("project_dir", str(Path(hub_rel).parent))
+    linked = {vault.resolve(t, hub_rel) for _, (t, _sub) in link_targets(hub.text)}
+    prefix = project_dir.strip("/") + "/"
     for rel in vault.pages:
-        if (
-            rel != hub_rel
-            and rel.startswith(project_dir.rstrip("/") + "/")
-            and rel not in linked
-        ):
+        if rel != hub_rel and rel.startswith(prefix) and rel not in linked:
             out.append(
                 Finding(
                     "R7-unlinked-page",
@@ -328,19 +403,19 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
                 )
             )
 
-    log_glob = spec.get("log_glob")
-    log_pages = (
-        sorted(
-            str(p.relative_to(vault.root).as_posix()) for p in vault.root.glob(log_glob)
-        )
-        if log_glob
-        else []
-    )
     log_warn = spec.get("log_warn_bytes")
     for rel in log_pages:
         page = vault.pages.get(rel)
         m = _LOG_NAME.search(rel)
         if page is None or not m:
+            out.append(
+                Finding(
+                    "R0-registry",
+                    "violation",
+                    rel,
+                    "log_glob matched a file that is not a `<name>-YYYY-MM.md` page",
+                )
+            )
             continue
         month = (m.group(1), m.group(2))
         for ln, level, text in page.headings:
@@ -388,7 +463,7 @@ def check_hub(vault: Vault, spec: dict) -> list[Finding]:
     for rel, baseline in spec.get("frozen_dated_sections", {}).items():
         page = vault.pages.get(rel)
         if page is None:
-            continue
+            continue  # reported above as R0-registry
         allowed = {lt(b).lower() for b in baseline}
         for ln, level, text in page.headings:
             if (
@@ -417,19 +492,38 @@ def _normalise_for_roll(text: str) -> str:
     return re.sub(r"\s+", " ", _WIKILINK.sub(repl, text)).strip()
 
 
-def _git_show(root: Path, rev: str, rel: str) -> str | None:
-    r = subprocess.run(
-        ["git", "-C", str(root), "show", f"{rev}:{rel}"], capture_output=True, text=True
-    )
-    return r.stdout if r.returncode == 0 else None
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True
+        )
+    except OSError as exc:  # git missing from PATH
+        raise CheckError(f"cannot run git: {exc}") from exc
+
+
+def verify_history(repo: Path, since: str) -> None:
+    r = _git(repo, "rev-parse", "--is-inside-work-tree")
+    if r.returncode != 0 or r.stdout.strip() != "true":
+        raise CheckError(f"--repo {repo} is not a git work tree: {r.stderr.strip()}")
+    r = _git(repo, "rev-parse", "--verify", "--quiet", f"{since}^{{commit}}")
+    if r.returncode != 0:
+        raise CheckError(f"--since {since!r} is not a commit in {repo}")
+
+
+def git_show(repo: Path, rev: str, rel: str) -> str | None:
+    """File contents at rev; None only when the path genuinely does not exist there."""
+    if _git(repo, "cat-file", "-e", f"{rev}:{rel}").returncode != 0:
+        return None  # rev was verified, so the path is absent (e.g. a hub new in this commit)
+    r = _git(repo, "show", f"{rev}:{rel}")
+    if r.returncode != 0:
+        raise CheckError(f"git show {rev}:{rel} failed: {r.stderr.strip()}")
+    return r.stdout
 
 
 def snapshot_block(page: Page) -> tuple[str, str] | None:
     """(heading text, body) of the single `###` under `## Current state`, if well formed."""
     current = [
-        h
-        for h in page.headings
-        if h[1] == 2 and h[2].strip().lower() == "current state"
+        h for h in page.headings if h[1] == 2 and h[2].lower() == "current state"
     ]
     if len(current) != 1:
         return None
@@ -445,39 +539,33 @@ def snapshot_block(page: Page) -> tuple[str, str] | None:
 def check_roll(vault: Vault, spec: dict, since: str, repo: Path) -> list[Finding]:
     """A snapshot that left the hub between `since` and the checked tree must be in a log."""
     hub_rel = spec["hub"]
-    old_text = _git_show(repo, since, hub_rel)
+    old_text = git_show(repo, since, hub_rel)
     if old_text is None:
-        return []
+        return []  # the hub did not exist at `since`
     old = snapshot_block(parse_page(hub_rel, old_text))
     new_page = vault.pages.get(hub_rel)
     new = snapshot_block(new_page) if new_page else None
     if old is None or (new is not None and lt(new[0]).lower() == lt(old[0]).lower()):
-        return []
+        return []  # nothing rolled (same-heading edits are not checked; see the module docstring)
     heading, body = old
-    log_glob = spec.get("log_glob", "")
-    logs = (
-        [
-            vault.pages[p.relative_to(vault.root).as_posix()]
-            for p in vault.root.glob(log_glob)
-        ]
-        if log_glob
-        else []
-    )
     want_body = _normalise_for_roll(body)
-    for log in logs:
-        has_heading = any(
-            level == 2 and lt(text).lower() == lt(heading).lower()
-            for _ln, level, text in log.headings
-        )
-        if has_heading and want_body in _normalise_for_roll(log.text):
-            return []
+    for rel in _log_pages(vault, spec):
+        log = vault.pages.get(rel)
+        if log is None:
+            continue
+        for ln, level, text in log.headings:
+            if level == 2 and lt(text).lower() == lt(heading).lower():
+                start, end = section_lines(log, ln)
+                section = "\n".join(log.text.split("\n")[start : end - 1])
+                if want_body in _normalise_for_roll(section):
+                    return []
     return [
         Finding(
             "R10-roll",
             "violation",
             hub_rel,
-            f"snapshot {heading!r} left the hub but is not verbatim in any month log "
-            "(promote it to `##` in the log for its date)",
+            f"snapshot {heading!r} left the hub but is not verbatim under a matching `##` "
+            "in any month log (promote it to `##` in the log for its date)",
         )
     ]
 
@@ -488,15 +576,21 @@ def run(
     reg_path = root / REGISTRY
     if not reg_path.exists():
         return EXIT_PASS, []  # inert: no hub has opted in
-    registry = json.loads(reg_path.read_text(encoding="utf-8"))
+    try:
+        registry = json.loads(read_text(reg_path))
+    except json.JSONDecodeError as exc:
+        raise CheckError(f"{REGISTRY}: invalid JSON: {exc}") from exc
     if registry.get("version") != 1 or not isinstance(registry.get("hubs"), list):
-        raise ValueError(f"{REGISTRY}: expected version 1 with a `hubs` list")
+        raise CheckError(f"{REGISTRY}: expected version 1 with a `hubs` list")
+    if since:
+        repo = repo or root
+        verify_history(repo, since)
     vault = Vault(root)
     findings: list[Finding] = []
     for spec in registry["hubs"]:
         findings += check_hub(vault, spec)
-        if since:
-            findings += check_roll(vault, spec, since, repo or root)
+        if since and repo is not None:
+            findings += check_roll(vault, spec, since, repo)
     code = (
         EXIT_VIOLATION
         if any(f.severity == "violation" for f in findings)
@@ -511,13 +605,13 @@ def contract_text(root: Path) -> str:
     if not reg_path.exists():
         return ""
     chunks = []
-    for spec in json.loads(reg_path.read_text(encoding="utf-8")).get("hubs", []):
+    for spec in json.loads(read_text(reg_path)).get("hubs", []):
         p = root / spec["hub"]
         if not p.exists():
             continue
-        page = parse_page(spec["hub"], p.read_text(encoding="utf-8"))
+        page = parse_page(spec["hub"], read_text(p))
         for ln, level, text in page.headings:
-            if level == 2 and text.strip().lower() == "maintenance contract":
+            if level == 2 and text.lower() == "maintenance contract":
                 start, end = section_lines(page, ln)
                 chunks.append(
                     "\n".join(page.text.split("\n")[start - 1 : end - 1]).rstrip()
@@ -525,45 +619,50 @@ def contract_text(root: Path) -> str:
     return "\n\n".join(chunks)
 
 
+USAGE = "usage: hub_contract.py <tree> [--since <rev>] [--repo <repo-root>] [--json]"
+
+
 def main(argv: list[str]) -> int:
-    args = list(argv)
-    as_json = "--json" in args
-    if as_json:
-        args.remove("--json")
-    opts: dict[str, str] = {}
-    for flag in ("--since", "--repo"):
-        if flag in args:
-            i = args.index(flag)
-            opts[flag] = args[i + 1]
-            del args[i : i + 2]
-    since = opts.get("--since")
-    repo = Path(opts["--repo"]) if "--repo" in opts else None
-    if len(args) != 1:
-        print(
-            "usage: hub_contract.py <tree> [--since <rev>] [--repo <repo-root>] [--json]",
-            file=sys.stderr,
-        )
-        return EXIT_ERROR
-    root = Path(args[0])
     try:
-        code, findings = run(root, since, repo)
+        args = list(argv)
+        as_json = "--json" in args
+        if as_json:
+            args.remove("--json")
+        opts: dict[str, str] = {}
+        for flag in ("--since", "--repo"):
+            if flag in args:
+                i = args.index(flag)
+                if i + 1 >= len(args) or args[i + 1].startswith("--"):
+                    raise CheckError(f"{flag} needs a value; {USAGE}")
+                opts[flag] = args[i + 1]
+                del args[i : i + 2]
+        if len(args) != 1:
+            raise CheckError(USAGE)
+        root = Path(args[0])
+        repo = Path(opts["--repo"]) if "--repo" in opts else None
+        code, findings = run(root, opts.get("--since"), repo)
+        if as_json:
+            print(
+                json.dumps(
+                    {"exit": code, "findings": [f.__dict__ for f in findings]}, indent=2
+                )
+            )
+        else:
+            for f in findings:
+                print(f.render())
+            if code == EXIT_VIOLATION:
+                try:
+                    text = contract_text(root)
+                except (
+                    Exception
+                ):  # printing the routing table is a courtesy, never a gate
+                    text = ""
+                if text:
+                    print("\nRouting rules (from the hub):\n" + text)
+        return code
     except Exception as exc:  # any failure to evaluate is "could not run", never a pass
         print(f"hub-contract: could not run: {exc}", file=sys.stderr)
         return EXIT_ERROR
-    if as_json:
-        print(
-            json.dumps(
-                {"exit": code, "findings": [f.__dict__ for f in findings]}, indent=2
-            )
-        )
-    else:
-        for f in findings:
-            print(f.render())
-        if code == EXIT_VIOLATION:
-            text = contract_text(root)
-            if text:
-                print("\nRouting rules (from the hub):\n" + text)
-    return code
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ _SUMMARY_RE = re.compile(r"^summary:\s*(.+?)$", re.MULTILINE)
 _CATEGORY_RE = re.compile(r"^category:\s*(\w+)", re.MULTILINE)
 _TIER_RE = re.compile(r"^tier:\s*(\w+)", re.MULTILINE)
 # Fork-local (hub contract, see obsidian_wiki/hub_contract.py and tests/test_graphrag_hub_contract.py).
-_HUB_CONTRACT_RE = re.compile(r"^hub_contract:\s*1\s*$", re.MULTILINE)
+_HUB_CONTRACT_RE = re.compile(r"""^hub_contract:\s*["']?1["']?\s*$""", re.MULTILINE)
 # Keep in sync with obsidian_wiki/lint.py. Target excludes `[` so a footnote-wrapped
 # `^[[[page|alias]]]` yields `page`; the optional `\\?` handles pipes escaped for
 # Markdown tables (`[[page\|Alias]]`), which otherwise capture as `page\`.
@@ -419,6 +419,8 @@ def query(
         should_read = [
             c["page"] for c in candidates if not index[c["slug"]].get("hub_contract")
         ][:max_should_read]
+        if not should_read:  # the hub is the only match: read it rather than nothing
+            should_read = [top_candidate["page"]]
     if path_result and not index_only:
         # Add path pages to should_read, deduplicated
         for p in path_result:
