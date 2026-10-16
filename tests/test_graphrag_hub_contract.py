@@ -60,8 +60,18 @@ def test_contracted_hub_routes_to_pages(tmp_path: Path) -> None:
     assert r["candidates"][0]["page"] == "demo.md"  # the hub still ranks first
     assert r["index_only"] is False
     assert r["should_read"], "a contracted hub must never yield an empty reading list"
-    assert "demo.md" not in r["should_read"]
     assert "demo-strategy.md" in r["should_read"]
+
+
+def test_contracted_hub_is_read_for_its_current_state(tmp_path: Path) -> None:
+    # The hub holds the one Current state snapshot and is budget-capped, so it is read, first,
+    # alongside the best topic pages. Excluding it lost current-state facts on real queries
+    # (rubrica split G10, 2026-10-16: two facts PRESENT in both baselines fell to PARTIAL in both
+    # split runs, each on a question whose top candidate was the hub).
+    r = query(_vault(tmp_path, contracted=True), "demo pricing", max_should_read=3)
+    assert r["should_read"][0] == "demo.md"
+    assert len(r["should_read"]) <= 3
+    assert sum(p == "demo.md" for p in r["should_read"]) == 1
 
 
 def test_uncontracted_behaviour_unchanged(tmp_path: Path) -> None:

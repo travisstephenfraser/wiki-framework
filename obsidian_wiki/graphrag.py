@@ -413,14 +413,14 @@ def query(
 
     should_read = [c["page"] for c in candidates[:max_should_read] if not index_only]
     # Fork-local (hub contract): a contracted hub is a router, not an answer. Its summary
-    # says where facts live, so never answer from it alone; read the best non-hub pages.
+    # says where facts live, so never answer from it alone. Read the hub itself first (it is
+    # budget-capped and holds the one Current state snapshot), then the best non-hub pages.
     if top_candidate and index[top_candidate["slug"]].get("hub_contract"):
         index_only = False
-        should_read = [
+        others = [
             c["page"] for c in candidates if not index[c["slug"]].get("hub_contract")
-        ][:max_should_read]
-        if not should_read:  # the hub is the only match: read it rather than nothing
-            should_read = [top_candidate["page"]]
+        ]
+        should_read = [top_candidate["page"], *others][: max(max_should_read, 1)]
     if path_result and not index_only:
         # Add path pages to should_read, deduplicated
         for p in path_result:
