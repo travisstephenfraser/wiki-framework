@@ -72,7 +72,7 @@ REPO=$(git rev-parse --show-toplevel)
 # Roll check against the last commit; a repository with no commits yet has nothing to roll from.
 SINCE=(); git rev-parse --verify --quiet HEAD >/dev/null && SINCE=(--since HEAD --repo "$REPO")
 # env -i: no inherited credentials (e.g. a deploy key's GIT_SSH_COMMAND) reach the checker.
-env -i PATH=/opt/homebrew/bin:/usr/bin:/bin HOME="$HOME" "$PY" -I "$DIR/hub_contract.py" "$TMP" "${SINCE[@]}"
+env -i PATH=/opt/homebrew/bin:/usr/bin:/bin HOME="$HOME" "$PY" -I "$DIR/hub_contract.py" "$TMP" ${SINCE[@]+"${SINCE[@]}"}
 rc=$?
 case $rc in
   0) exit 0 ;;
